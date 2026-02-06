@@ -337,13 +337,15 @@ app.get("/", async (c) => {
             ? html`<div class="card"><p>No feeds were selected.</p></div>`
             : ""}
 
-          <div class="toolbar">
-            <div class="toolbar-group">
-              <h2 style="margin: 0;">Your Feeds</h2>
-              <span class="pill">${feedsWithConfig.length}</span>
-            </div>
-            <div class="toolbar-group">${viewToggle}</div>
-          </div>
+	          <div class="toolbar">
+	            <div class="toolbar-group">
+	              <h2 style="margin: 0;">Your Feeds</h2>
+	              <span class="pill" id="feed-total-count"
+	                >${feedsWithConfig.length}</span
+	              >
+	            </div>
+	            <div class="toolbar-group">${viewToggle}</div>
+	          </div>
 
           ${feedsWithConfig.length === 0
             ? html`<div class="card">
@@ -351,14 +353,14 @@ app.get("/", async (c) => {
               </div>`
             : view === "table"
               ? html`
-                  <div class="card">
-                    <form
-                      id="bulk-feed-delete-form"
-                      action="/admin/feeds/bulk-delete"
-                      method="post"
-                      onsubmit="return confirmBulkFeedDelete()"
-                    >
-                      <input type="hidden" name="view" value="table" />
+	                  <div class="card">
+	                    <form
+	                      id="bulk-feed-delete-form"
+	                      action="/admin/feeds/bulk-delete"
+	                      method="post"
+	                      onsubmit="return onBulkFeedDeleteSubmit(event)"
+	                    >
+	                      <input type="hidden" name="view" value="table" />
 
                       <div class="toolbar">
                         <div class="toolbar-group toolbar-group-fill">
@@ -807,26 +809,29 @@ app.get("/", async (c) => {
 
         <script>
           ${raw(`
-        let FEED_ROWS = [];
-        let FEED_CHECKBOXES = [];
-        let FEED_SELECTED_COUNT_EL = null;
-        let FEED_MATCH_COUNT_EL = null;
-        let FEED_BULK_DELETE_BUTTON_EL = null;
-        let FEED_SELECT_ALL_EL = null;
-        let FEED_FILTER_TIMER = null;
-        let FEED_SORT_KEY = 'title';
-        let FEED_SORT_DIR = 'asc';
-        const FEED_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+	        let FEED_ROWS = [];
+	        let FEED_CHECKBOXES = [];
+	        let FEED_SELECTED_COUNT_EL = null;
+	        let FEED_MATCH_COUNT_EL = null;
+	        let FEED_TOTAL_COUNT_EL = null;
+	        let FEED_BULK_DELETE_BUTTON_EL = null;
+	        let FEED_SELECT_ALL_EL = null;
+	        let FEED_FILTER_TIMER = null;
+	        let FEED_BULK_DELETE_IN_PROGRESS = false;
+	        let FEED_SORT_KEY = 'title';
+	        let FEED_SORT_DIR = 'asc';
+	        const FEED_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-        function initFeedUI() {
-          FEED_ROWS = Array.from(document.querySelectorAll('.feed-row'));
-          FEED_CHECKBOXES = Array.from(document.querySelectorAll('.feed-select'));
-          FEED_SELECTED_COUNT_EL = document.getElementById('selected-feed-count');
-          FEED_MATCH_COUNT_EL = document.getElementById('feed-match-count');
-          FEED_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-feeds-button');
-          FEED_SELECT_ALL_EL = document.getElementById('select-all-feeds');
-          setupFeedTableResizing();
-          setupFeedTableSorting();
+	        function initFeedUI() {
+	          FEED_ROWS = Array.from(document.querySelectorAll('.feed-row'));
+	          FEED_CHECKBOXES = Array.from(document.querySelectorAll('.feed-select'));
+	          FEED_SELECTED_COUNT_EL = document.getElementById('selected-feed-count');
+	          FEED_MATCH_COUNT_EL = document.getElementById('feed-match-count');
+	          FEED_TOTAL_COUNT_EL = document.getElementById('feed-total-count');
+	          FEED_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-feeds-button');
+	          FEED_SELECT_ALL_EL = document.getElementById('select-all-feeds');
+	          setupFeedTableResizing();
+	          setupFeedTableSorting();
           updateFeedMatchCount();
           updateFeedSelectionState();
         }
@@ -1084,17 +1089,151 @@ app.get("/", async (c) => {
           updateFeedSelectionState();
         }
 
-        function confirmBulkFeedDelete() {
-          const selected = FEED_CHECKBOXES.filter((checkbox) => checkbox.checked).length;
-          if (selected === 0) {
-            return false;
-          }
-          return confirm('Delete ' + selected + ' selected feed(s)? This will also delete all emails inside those feeds.');
-        }
+	        function confirmBulkFeedDelete() {
+	          const selected = FEED_CHECKBOXES.filter((checkbox) => checkbox.checked).length;
+	          if (selected === 0) return false;
+	
+	          const query = (document.getElementById('feed-search')?.value || '').trim();
+	          const extra =
+	            selected >= 50 && !query
+	              ? '\\n\\nThis is a large delete. Tip: use Search to narrow down spam first.'
+	              : '';
+	          return confirm(
+	            'Delete ' +
+	              selected +
+	              ' selected feed(s)? This will also delete all emails inside those feeds.' +
+	              extra,
+	          );
+	        }
 
-        document.addEventListener('DOMContentLoaded', () => {
-          initFeedUI();
-        });
+	        function setButtonLoading(buttonEl, loading, label) {
+	          if (!buttonEl) return;
+	          if (loading) {
+	            if (!buttonEl.dataset.originalLabel) {
+	              buttonEl.dataset.originalLabel = (buttonEl.textContent || '').trim();
+	            }
+	            const text = label || 'Working...';
+	            buttonEl.classList.add('is-loading');
+	            buttonEl.disabled = true;
+	            buttonEl.innerHTML = '<span class=\"spinner\" aria-hidden=\"true\"></span>' + text;
+	            return;
+	          }
+	
+	          const original = buttonEl.dataset.originalLabel || (buttonEl.textContent || '').trim();
+	          buttonEl.classList.remove('is-loading');
+	          buttonEl.innerHTML = original;
+	        }
+
+	        function removeFeedRowsById(feedIds) {
+	          const toRemove = new Set((feedIds || []).map((v) => String(v)));
+	          if (toRemove.size === 0) return;
+	
+	          FEED_ROWS.forEach((row) => {
+	            const checkbox = row.querySelector('input.feed-select');
+	            const id = checkbox ? checkbox.value : '';
+	            if (toRemove.has(id)) {
+	              row.remove();
+	            }
+	          });
+	
+	          FEED_ROWS = Array.from(document.querySelectorAll('.feed-row'));
+	          FEED_CHECKBOXES = Array.from(document.querySelectorAll('.feed-select'));
+	
+	          if (FEED_TOTAL_COUNT_EL) {
+	            FEED_TOTAL_COUNT_EL.textContent = String(FEED_ROWS.length);
+	          }
+	        }
+
+	        function onBulkFeedDeleteSubmit(event) {
+	          if (event && event.preventDefault) event.preventDefault();
+	          void bulkDeleteSelectedFeeds();
+	          return false;
+	        }
+
+	        async function bulkDeleteSelectedFeeds() {
+	          if (FEED_BULK_DELETE_IN_PROGRESS) return;
+	          const selectedIds = FEED_CHECKBOXES.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+	          if (selectedIds.length === 0) {
+	            if (window.showToast) window.showToast('No feeds selected.', { type: 'info' });
+	            return;
+	          }
+	          if (!confirmBulkFeedDelete()) {
+	            return;
+	          }
+	
+	          FEED_BULK_DELETE_IN_PROGRESS = true;
+	          setButtonLoading(FEED_BULK_DELETE_BUTTON_EL, true, 'Deleting...');
+	
+	          const toast = window.showToast
+	            ? window.showToast('Deleting ' + selectedIds.length + ' feed(s)...', { type: 'info', loading: true, duration: 0 })
+	            : null;
+	
+	          const batchSize = 10;
+	          let deletedTotal = 0;
+	          const failed = [];
+	
+	          try {
+	            for (let i = 0; i < selectedIds.length; i += batchSize) {
+	              const batch = selectedIds.slice(i, i + batchSize);
+	              const res = await fetch('/admin/feeds/bulk-delete', {
+	                method: 'POST',
+	                headers: {
+	                  'Content-Type': 'application/json',
+	                  'Accept': 'application/json',
+	                },
+	                credentials: 'same-origin',
+	                body: JSON.stringify({ feedIds: batch }),
+	              });
+	
+	              const data = await res.json().catch(() => ({}));
+	              if (!res.ok) {
+	                const message = data && data.error ? String(data.error) : ('Request failed (' + res.status + ')');
+	                throw new Error(message);
+	              }
+	
+	              const deletedIds = Array.isArray(data.deletedFeedIds) ? data.deletedFeedIds : batch;
+	              const failedIds = Array.isArray(data.failedFeedIds) ? data.failedFeedIds : [];
+	
+	              removeFeedRowsById(deletedIds);
+	              deletedTotal += deletedIds.length;
+	              failed.push(...failedIds);
+	
+	              if (toast && toast.update) {
+	                const done = Math.min(i + batch.length, selectedIds.length);
+	                toast.update('Deleting... (' + done + ' of ' + selectedIds.length + ')', { type: 'info' });
+	              }
+	
+	              // Keep selection state consistent as rows disappear.
+	              updateFeedMatchCount();
+	              updateFeedSelectionState();
+	            }
+	
+	            if (toast && toast.dismiss) toast.dismiss();
+	            if (failed.length > 0) {
+	              if (window.showToast) {
+	                window.showToast(
+	                  'Deleted ' + deletedTotal + ' feed(s). ' + failed.length + ' failed (still visible).',
+	                  { type: 'error', duration: 6500 },
+	                );
+	              }
+	            } else {
+	              if (window.showToast) window.showToast('Deleted ' + deletedTotal + ' feed(s).', { type: 'success' });
+	            }
+	          } catch (error) {
+	            if (toast && toast.dismiss) toast.dismiss();
+	            if (window.showToast) {
+	              window.showToast('Bulk delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 7000 });
+	            }
+	          } finally {
+	            FEED_BULK_DELETE_IN_PROGRESS = false;
+	            setButtonLoading(FEED_BULK_DELETE_BUTTON_EL, false);
+	            updateFeedSelectionState();
+	          }
+	        }
+
+	        document.addEventListener('DOMContentLoaded', () => {
+	          initFeedUI();
+	        });
       `)};
         </script>
       `,
@@ -1315,28 +1454,60 @@ app.post("/feeds/:feedId/edit", async (c) => {
   }
 });
 
+async function deleteKeysWithConcurrency(
+  emailStorage: KVNamespace,
+  keys: string[],
+  concurrency: number,
+): Promise<{ ok: string[]; failed: string[] }> {
+  const uniqueKeys = Array.from(new Set(keys.filter(Boolean)));
+  const ok: string[] = [];
+  const failed: string[] = [];
+  const limit = Math.max(1, Math.floor(concurrency) || 1);
+
+  for (let i = 0; i < uniqueKeys.length; i += limit) {
+    const batch = uniqueKeys.slice(i, i + limit);
+    const results = await Promise.allSettled(
+      batch.map((key) => emailStorage.delete(key)),
+    );
+    results.forEach((result, idx) => {
+      const key = batch[idx];
+      if (result.status === "fulfilled") {
+        ok.push(key);
+      } else {
+        failed.push(key);
+      }
+    });
+  }
+
+  return { ok, failed };
+}
+
 async function deleteFeedAndEmails(
   emailStorage: KVNamespace,
   feedId: string,
+  options: { skipListUpdate?: boolean } = {},
 ): Promise<boolean> {
+  const feedConfigKey = `feed:${feedId}:config`;
   const feedMetadataKey = `feed:${feedId}:metadata`;
-  const feedMetadata = (await emailStorage.get(feedMetadataKey, {
-    type: "json",
-  })) as FeedMetadata | null;
 
-  if (!feedMetadata) {
-    return false;
-  }
+  const [feedConfig, feedMetadata] = (await Promise.all([
+    emailStorage.get(feedConfigKey, { type: "json" }),
+    emailStorage.get(feedMetadataKey, { type: "json" }),
+  ])) as [FeedConfig | null, FeedMetadata | null];
 
-  for (const email of feedMetadata.emails) {
-    await emailStorage.delete(email.key);
-  }
+  const emailKeys = (feedMetadata?.emails || []).map((email) => email.key);
+  await deleteKeysWithConcurrency(emailStorage, emailKeys, 25);
 
-  await emailStorage.delete(`feed:${feedId}:config`);
-  await emailStorage.delete(feedMetadataKey);
-  await removeFeedFromList(emailStorage, feedId);
+  await Promise.all([
+    emailStorage.delete(feedConfigKey),
+    emailStorage.delete(feedMetadataKey),
+  ]);
 
-  return true;
+  const removedFromList = options.skipListUpdate
+    ? false
+    : await removeFeedFromList(emailStorage, feedId);
+
+  return !!feedConfig || !!feedMetadata || removedFromList;
 }
 
 // Delete feed
@@ -1363,26 +1534,108 @@ app.post("/feeds/bulk-delete", async (c) => {
   const env = c.env as unknown as Env;
   const emailStorage = env.EMAIL_STORAGE;
 
-  try {
+	  try {
+	    const contentType = c.req.header("Content-Type") || "";
+	    const wantsJson =
+	      contentType.includes("application/json") ||
+	      (c.req.header("Accept") || "").includes("application/json");
+
+	    if (wantsJson) {
+	      const body = (await c.req.json().catch(() => null)) as {
+	        feedIds?: unknown;
+      } | null;
+
+      const rawIds = Array.isArray(body?.feedIds) ? body?.feedIds : [];
+      const parsedFeedIds = Array.from(
+        new Set(rawIds.map((value) => String(value)).filter(Boolean)),
+      );
+
+      if (parsedFeedIds.length === 0) {
+        return c.json({ ok: false, error: "No feeds were selected." }, 400);
+      }
+
+      // The UI batches requests; cap to avoid accidental huge deletes in one request.
+      if (parsedFeedIds.length > 50) {
+        return c.json(
+          {
+            ok: false,
+            error:
+              "Too many feedIds for a single request. Please delete in smaller batches.",
+          },
+          413,
+        );
+      }
+
+      const results: Array<{ feedId: string; ok: boolean }> = [];
+      const concurrency = 3;
+
+      for (let i = 0; i < parsedFeedIds.length; i += concurrency) {
+        const batch = parsedFeedIds.slice(i, i + concurrency);
+        const batchResults = await Promise.all(
+          batch.map(async (feedId) => {
+            try {
+              await deleteFeedAndEmails(emailStorage, feedId, {
+                skipListUpdate: true,
+              });
+              return { feedId, ok: true };
+            } catch (error) {
+              console.error("Error bulk deleting feed:", feedId, error);
+              return { feedId, ok: false };
+            }
+          }),
+        );
+        results.push(...batchResults);
+      }
+
+      const okIds = results.filter((r) => r.ok).map((r) => r.feedId);
+      const failedFeedIds = results.filter((r) => !r.ok).map((r) => r.feedId);
+
+      const deletedFeedIds = await removeFeedsFromListBulk(emailStorage, okIds);
+
+      return c.json({
+        ok: failedFeedIds.length === 0,
+        deletedFeedIds,
+        failedFeedIds,
+      });
+    }
+
     const formData = await c.req.formData();
     const view = formData.get("view")?.toString() === "table" ? "table" : "list";
     const redirectBase = `/admin?view=${view}`;
     const rawIds = formData.getAll("feedIds").map((value) => value.toString());
-    const feedIds = Array.from(new Set(rawIds.filter(Boolean)));
+    const parsedFeedIds = Array.from(new Set(rawIds.filter(Boolean)));
 
-    if (feedIds.length === 0) {
+    if (parsedFeedIds.length === 0) {
       return c.redirect(`${redirectBase}&message=bulkDeleteNoop`);
     }
 
-    let deletedCount = 0;
-    for (const feedId of feedIds) {
-      const deleted = await deleteFeedAndEmails(emailStorage, feedId);
-      if (deleted) {
-        deletedCount += 1;
-      }
+    const results: Array<{ feedId: string; ok: boolean }> = [];
+    const concurrency = 3;
+
+    for (let i = 0; i < parsedFeedIds.length; i += concurrency) {
+      const batch = parsedFeedIds.slice(i, i + concurrency);
+      const batchResults = await Promise.all(
+        batch.map(async (feedId) => {
+          try {
+            await deleteFeedAndEmails(emailStorage, feedId, {
+              skipListUpdate: true,
+            });
+            return { feedId, ok: true };
+          } catch (error) {
+            console.error("Error bulk deleting feed:", feedId, error);
+            return { feedId, ok: false };
+          }
+        }),
+      );
+      results.push(...batchResults);
     }
 
-    return c.redirect(`${redirectBase}&message=bulkDeleted&count=${deletedCount}`);
+    const okIds = results.filter((r) => r.ok).map((r) => r.feedId);
+    const deletedFeedIds = await removeFeedsFromListBulk(emailStorage, okIds);
+
+    return c.redirect(
+      `${redirectBase}&message=bulkDeleted&count=${deletedFeedIds.length}`,
+    );
   } catch (error) {
     console.error("Error bulk deleting feeds:", error);
     return c.text("Error bulk deleting feeds. Please try again.", 400);
@@ -1531,7 +1784,9 @@ app.get("/feeds/:feedId/emails", async (c) => {
             </div>
           </div>
 
-          <h2>Emails (${feedMetadata.emails.length})</h2>
+	          <h2>
+	            Emails (<span id="email-total-count">${feedMetadata.emails.length}</span>)
+	          </h2>
 
           ${message === "bulkDeleted"
             ? html`<div class="card">
@@ -1543,11 +1798,11 @@ app.get("/feeds/:feedId/emails", async (c) => {
             : ""}
           ${feedMetadata.emails.length > 0
             ? html`
-                <form
-                  action="/admin/feeds/${feedId}/emails/bulk-delete"
-                  method="post"
-                  onsubmit="return confirmBulkEmailDelete()"
-                >
+	                <form
+	                  action="/admin/feeds/${feedId}/emails/bulk-delete"
+	                  method="post"
+	                  onsubmit="return onBulkEmailDeleteSubmit(event)"
+	                >
                   <div class="toolbar">
                     <div class="toolbar-group toolbar-group-fill">
                       <input
@@ -1689,13 +1944,16 @@ app.get("/feeds/:feedId/emails", async (c) => {
 
         <script>
           ${raw(`
+	        const EMAIL_FEED_ID = ${JSON.stringify(feedId)};
 	        let EMAIL_ROWS = [];
 	        let EMAIL_CHECKBOXES = [];
 	        let EMAIL_SELECTED_COUNT_EL = null;
 	        let EMAIL_MATCH_COUNT_EL = null;
+	        let EMAIL_TOTAL_COUNT_EL = null;
 	        let EMAIL_BULK_DELETE_BUTTON_EL = null;
 	        let EMAIL_SELECT_ALL_EL = null;
 	        let EMAIL_FILTER_TIMER = null;
+	        let EMAIL_BULK_DELETE_IN_PROGRESS = false;
 	        let EMAIL_SORT_KEY = 'receivedAt';
 	        let EMAIL_SORT_DIR = 'desc';
         const EMAIL_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -1705,6 +1963,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
 	          EMAIL_CHECKBOXES = Array.from(document.querySelectorAll('.email-select'));
 	          EMAIL_SELECTED_COUNT_EL = document.getElementById('selected-email-count');
 	          EMAIL_MATCH_COUNT_EL = document.getElementById('email-match-count');
+	          EMAIL_TOTAL_COUNT_EL = document.getElementById('email-total-count');
 	          EMAIL_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-emails-button');
 	          EMAIL_SELECT_ALL_EL = document.getElementById('select-all-emails');
 	          setupEmailTableResizing();
@@ -1961,17 +2220,145 @@ app.get("/feeds/:feedId/emails", async (c) => {
 	          updateEmailSelectionState();
 	        }
 
-        function confirmBulkEmailDelete() {
-          const selected = EMAIL_CHECKBOXES.filter((checkbox) => checkbox.checked).length;
-          if (selected === 0) {
-            return false;
-          }
-          return confirm('Delete ' + selected + ' selected email(s)?');
-        }
+	        function confirmBulkEmailDelete() {
+	          const selected = EMAIL_CHECKBOXES.filter((checkbox) => checkbox.checked).length;
+	          if (selected === 0) return false;
+	          const query = (document.getElementById('email-search')?.value || '').trim();
+	          const extra =
+	            selected >= 200 && !query
+	              ? '\\n\\nThis is a large delete. Tip: use Search to narrow down spam first.'
+	              : '';
+	          return confirm('Delete ' + selected + ' selected email(s)?' + extra);
+	        }
 
-        document.addEventListener('DOMContentLoaded', () => {
-          initEmailUI();
-        });
+	        function setButtonLoading(buttonEl, loading, label) {
+	          if (!buttonEl) return;
+	          if (loading) {
+	            if (!buttonEl.dataset.originalLabel) {
+	              buttonEl.dataset.originalLabel = (buttonEl.textContent || '').trim();
+	            }
+	            const text = label || 'Working...';
+	            buttonEl.classList.add('is-loading');
+	            buttonEl.disabled = true;
+	            buttonEl.innerHTML = '<span class=\"spinner\" aria-hidden=\"true\"></span>' + text;
+	            return;
+	          }
+
+	          const original = buttonEl.dataset.originalLabel || (buttonEl.textContent || '').trim();
+	          buttonEl.classList.remove('is-loading');
+	          buttonEl.innerHTML = original;
+	        }
+
+	        function removeEmailRowsByKey(emailKeys) {
+	          const toRemove = new Set((emailKeys || []).map((v) => String(v)));
+	          if (toRemove.size === 0) return;
+
+	          EMAIL_ROWS.forEach((row) => {
+	            const checkbox = row.querySelector('input.email-select');
+	            const key = checkbox ? checkbox.value : '';
+	            if (toRemove.has(key)) {
+	              row.remove();
+	            }
+	          });
+
+	          EMAIL_ROWS = Array.from(document.querySelectorAll('.email-row'));
+	          EMAIL_CHECKBOXES = Array.from(document.querySelectorAll('.email-select'));
+
+	          if (EMAIL_TOTAL_COUNT_EL) {
+	            EMAIL_TOTAL_COUNT_EL.textContent = String(EMAIL_ROWS.length);
+	          }
+	        }
+
+	        function onBulkEmailDeleteSubmit(event) {
+	          if (event && event.preventDefault) event.preventDefault();
+	          void bulkDeleteSelectedEmails();
+	          return false;
+	        }
+
+	        async function bulkDeleteSelectedEmails() {
+	          if (EMAIL_BULK_DELETE_IN_PROGRESS) return;
+	          const selectedKeys = EMAIL_CHECKBOXES.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+	          if (selectedKeys.length === 0) {
+	            if (window.showToast) window.showToast('No emails selected.', { type: 'info' });
+	            return;
+	          }
+	          if (!confirmBulkEmailDelete()) {
+	            return;
+	          }
+
+	          EMAIL_BULK_DELETE_IN_PROGRESS = true;
+	          setButtonLoading(EMAIL_BULK_DELETE_BUTTON_EL, true, 'Deleting...');
+
+	          const toast = window.showToast
+	            ? window.showToast('Deleting ' + selectedKeys.length + ' email(s)...', { type: 'info', loading: true, duration: 0 })
+	            : null;
+
+	          const batchSize = 50;
+	          let deletedTotal = 0;
+	          const failed = [];
+
+	          try {
+	            const url = '/admin/feeds/' + encodeURIComponent(EMAIL_FEED_ID) + '/emails/bulk-delete';
+	            for (let i = 0; i < selectedKeys.length; i += batchSize) {
+	              const batch = selectedKeys.slice(i, i + batchSize);
+	              const res = await fetch(url, {
+	                method: 'POST',
+	                headers: {
+	                  'Content-Type': 'application/json',
+	                  'Accept': 'application/json',
+	                },
+	                credentials: 'same-origin',
+	                body: JSON.stringify({ emailKeys: batch }),
+	              });
+
+	              const data = await res.json().catch(() => ({}));
+	              if (!res.ok) {
+	                const message = data && data.error ? String(data.error) : ('Request failed (' + res.status + ')');
+	                throw new Error(message);
+	              }
+
+	              const deletedKeys = Array.isArray(data.deletedEmailKeys) ? data.deletedEmailKeys : batch;
+	              const failedKeys = Array.isArray(data.failedEmailKeys) ? data.failedEmailKeys : [];
+
+	              removeEmailRowsByKey(deletedKeys);
+	              deletedTotal += deletedKeys.length;
+	              failed.push(...failedKeys);
+
+	              if (toast && toast.update) {
+	                const done = Math.min(i + batch.length, selectedKeys.length);
+	                toast.update('Deleting... (' + done + ' of ' + selectedKeys.length + ')', { type: 'info' });
+	              }
+
+	              updateEmailMatchCount();
+	              updateEmailSelectionState();
+	            }
+
+	            if (toast && toast.dismiss) toast.dismiss();
+	            if (failed.length > 0) {
+	              if (window.showToast) {
+	                window.showToast(
+	                  'Deleted ' + deletedTotal + ' email(s). ' + failed.length + ' failed (still visible).',
+	                  { type: 'error', duration: 6500 },
+	                );
+	              }
+	            } else {
+	              if (window.showToast) window.showToast('Deleted ' + deletedTotal + ' email(s).', { type: 'success' });
+	            }
+	          } catch (error) {
+	            if (toast && toast.dismiss) toast.dismiss();
+	            if (window.showToast) {
+	              window.showToast('Bulk delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 7000 });
+	            }
+	          } finally {
+	            EMAIL_BULK_DELETE_IN_PROGRESS = false;
+	            setButtonLoading(EMAIL_BULK_DELETE_BUTTON_EL, false);
+	            updateEmailSelectionState();
+	          }
+	        }
+
+	        document.addEventListener('DOMContentLoaded', () => {
+	          initEmailUI();
+	        });
       `)};
         </script>
       `,
@@ -2388,6 +2775,66 @@ app.post("/feeds/:feedId/emails/bulk-delete", async (c) => {
   const feedId = c.req.param("feedId");
 
   try {
+    const contentType = c.req.header("Content-Type") || "";
+    const wantsJson =
+      contentType.includes("application/json") ||
+      (c.req.header("Accept") || "").includes("application/json");
+
+    const feedMetadataKey = `feed:${feedId}:metadata`;
+    const feedMetadata = (await emailStorage.get(feedMetadataKey, {
+      type: "json",
+    })) as FeedMetadata | null;
+    if (!feedMetadata) {
+      return wantsJson
+        ? c.json({ ok: false, error: "Feed not found" }, 404)
+        : c.text("Feed not found", 404);
+    }
+
+    const allowedKeys = new Set(feedMetadata.emails.map((email) => email.key));
+
+    if (wantsJson) {
+      const body = (await c.req.json().catch(() => null)) as {
+        emailKeys?: unknown;
+      } | null;
+
+      const rawEmailKeys = Array.isArray(body?.emailKeys) ? body?.emailKeys : [];
+      const emailKeys = Array.from(
+        new Set(rawEmailKeys.map((value) => String(value)).filter(Boolean)),
+      );
+
+      if (emailKeys.length === 0) {
+        return c.json({ ok: false, error: "No emails were selected." }, 400);
+      }
+
+      // The UI batches requests; cap to avoid accidental huge deletes in one request.
+      if (emailKeys.length > 250) {
+        return c.json(
+          {
+            ok: false,
+            error:
+              "Too many emailKeys for a single request. Please delete in smaller batches.",
+          },
+          413,
+        );
+      }
+
+      const candidates = emailKeys.filter((key) => allowedKeys.has(key));
+      const { ok: deletedOk, failed: failedEmailKeys } =
+        await deleteKeysWithConcurrency(emailStorage, candidates, 35);
+
+      const deletedSet = new Set(deletedOk);
+      feedMetadata.emails = feedMetadata.emails.filter(
+        (email) => !deletedSet.has(email.key),
+      );
+      await emailStorage.put(feedMetadataKey, JSON.stringify(feedMetadata));
+
+      return c.json({
+        ok: failedEmailKeys.length === 0,
+        deletedEmailKeys: deletedOk,
+        failedEmailKeys,
+      });
+    }
+
     const formData = await c.req.formData();
     const rawEmailKeys = formData
       .getAll("emailKeys")
@@ -2398,32 +2845,21 @@ app.post("/feeds/:feedId/emails/bulk-delete", async (c) => {
       return c.redirect(`/admin/feeds/${feedId}/emails?message=bulkDeleteNoop`);
     }
 
-    const feedMetadataKey = `feed:${feedId}:metadata`;
-    const feedMetadata = (await emailStorage.get(feedMetadataKey, {
-      type: "json",
-    })) as FeedMetadata | null;
-    if (!feedMetadata) {
-      return c.text("Feed not found", 404);
-    }
+    const candidates = emailKeys.filter((key) => allowedKeys.has(key));
+    const { ok: deletedOk } = await deleteKeysWithConcurrency(
+      emailStorage,
+      candidates,
+      35,
+    );
 
-    const allowedKeys = new Set(feedMetadata.emails.map((email) => email.key));
-    let deletedCount = 0;
-
-    for (const emailKey of emailKeys) {
-      if (!allowedKeys.has(emailKey)) {
-        continue;
-      }
-      await emailStorage.delete(emailKey);
-      deletedCount += 1;
-    }
-
+    const deletedSet = new Set(deletedOk);
     feedMetadata.emails = feedMetadata.emails.filter(
-      (email) => !emailKeys.includes(email.key),
+      (email) => !deletedSet.has(email.key),
     );
     await emailStorage.put(feedMetadataKey, JSON.stringify(feedMetadata));
 
     return c.redirect(
-      `/admin/feeds/${feedId}/emails?message=bulkDeleted&count=${deletedCount}`,
+      `/admin/feeds/${feedId}/emails?message=bulkDeleted&count=${deletedOk.length}`,
     );
   } catch (error) {
     console.error("Error bulk deleting emails:", error);
@@ -2501,25 +2937,54 @@ async function updateFeedInList(
   }
 }
 
-// Helper function to remove a feed from the list of all feeds
-async function removeFeedFromList(
+async function removeFeedsFromListBulk(
   emailStorage: KVNamespace,
-  feedId: string,
-): Promise<void> {
+  feedIds: string[],
+): Promise<string[]> {
   try {
     const feedListKey = "feeds:list";
     const feedList = ((await emailStorage.get(feedListKey, {
       type: "json",
     })) as FeedList | null) || { feeds: [] };
 
-    // Filter out the removed feed
-    feedList.feeds = feedList.feeds.filter((feed) => feed.id !== feedId);
+    const toRemove = new Set(feedIds.filter(Boolean));
+    if (toRemove.size === 0) {
+      return [];
+    }
+
+    const removed: string[] = [];
+    const nextFeeds: FeedListItem[] = [];
+
+    for (const feed of feedList.feeds) {
+      if (toRemove.has(feed.id)) {
+        removed.push(feed.id);
+        continue;
+      }
+      nextFeeds.push(feed);
+    }
+
+    if (removed.length === 0) {
+      return [];
+    }
+
+    feedList.feeds = nextFeeds;
 
     // Store updated list
     await emailStorage.put(feedListKey, JSON.stringify(feedList));
+    return removed;
   } catch (error) {
     console.error("Error removing feed from list:", error);
+    return [];
   }
+}
+
+// Helper function to remove a feed from the list of all feeds
+async function removeFeedFromList(
+  emailStorage: KVNamespace,
+  feedId: string,
+): Promise<boolean> {
+  const removed = await removeFeedsFromListBulk(emailStorage, [feedId]);
+  return removed.includes(feedId);
 }
 
 // Update feed via API (for in-place editing)

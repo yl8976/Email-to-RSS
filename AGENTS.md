@@ -81,6 +81,7 @@ Notes:
 - Use **Table** view for bulk delete.
 - Table columns are resizable and sortable; widths persist per-browser via localStorage.
 - **Select Results** selects all rows currently shown by the search filter; **Clear Selection** unselects everything.
+- Bulk deletes are performed asynchronously (batched requests) so the UI stays responsive.
 - Avoid wildcard deletion; prefer search + small batches to reduce risk of deleting legitimate feeds.
 
 ## Cloudflare/Wrangler conventions
