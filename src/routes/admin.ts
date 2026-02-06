@@ -391,6 +391,14 @@ app.get("/", async (c) => {
 
                       <div class="table-wrap">
                         <table class="table table-feeds">
+                          <colgroup>
+                            <col data-col="select" style="width: 44px;" />
+                            <col data-col="title" style="width: 340px;" />
+                            <col data-col="feedId" style="width: 160px;" />
+                            <col data-col="email" style="width: 220px;" />
+                            <col data-col="rss" style="width: 220px;" />
+                            <col data-col="actions" style="width: 200px;" />
+                          </colgroup>
                           <thead>
                             <tr>
                               <th>
@@ -400,11 +408,34 @@ app.get("/", async (c) => {
                                   onchange="toggleAllFeeds(this.checked)"
                                 />
                               </th>
-                              <th>Title</th>
-                              <th>Feed ID</th>
-                              <th>Email</th>
-                              <th>RSS</th>
-                              <th>Actions</th>
+                              <th class="th-resizable" data-sort-key="title" aria-sort="none">
+                                <button type="button" class="th-button" data-sort-key="title">
+                                  Title <span class="sort-indicator" aria-hidden="true"></span>
+                                </button>
+                                <div class="col-resizer" data-col="title" title="Resize"></div>
+                              </th>
+                              <th class="th-resizable" data-sort-key="feedId" aria-sort="none">
+                                <button type="button" class="th-button" data-sort-key="feedId">
+                                  Feed ID <span class="sort-indicator" aria-hidden="true"></span>
+                                </button>
+                                <div class="col-resizer" data-col="feedId" title="Resize"></div>
+                              </th>
+                              <th class="th-resizable" data-sort-key="email" aria-sort="none">
+                                <button type="button" class="th-button" data-sort-key="email">
+                                  Email <span class="sort-indicator" aria-hidden="true"></span>
+                                </button>
+                                <div class="col-resizer" data-col="email" title="Resize"></div>
+                              </th>
+                              <th class="th-resizable" data-sort-key="rss" aria-sort="none">
+                                <button type="button" class="th-button" data-sort-key="rss">
+                                  RSS <span class="sort-indicator" aria-hidden="true"></span>
+                                </button>
+                                <div class="col-resizer" data-col="rss" title="Resize"></div>
+                              </th>
+                              <th class="th-resizable">
+                                <span>Actions</span>
+                                <div class="col-resizer" data-col="actions" title="Resize"></div>
+                              </th>
                             </tr>
                           </thead>
                           <tbody id="feed-table-body">
@@ -413,6 +444,10 @@ app.get("/", async (c) => {
                               const rssUrl = `https://${env.DOMAIN}/rss/${feed.id}`;
                               const titleDisplay = clampText(feed.title, 160);
                               const titleHover = clampText(feed.title, 1000);
+                              const sortTitle = titleHover.toLowerCase();
+                              const sortFeedId = feed.id.toLowerCase();
+                              const sortEmail = emailAddress.toLowerCase();
+                              const sortRss = rssUrl.toLowerCase();
                               const descDisplay = clampText(feed.description || "", 220);
                               const descHover = clampText(feed.description || "", 1000);
                               const searchHaystack =
@@ -422,6 +457,10 @@ app.get("/", async (c) => {
                                 <tr
                                   class="feed-row"
                                   data-search="${searchHaystack}"
+                                  data-sort-title="${sortTitle}"
+                                  data-sort-feed-id="${sortFeedId}"
+                                  data-sort-email="${sortEmail}"
+                                  data-sort-rss="${sortRss}"
                                 >
                                   <td>
                                     <input
@@ -774,6 +813,9 @@ app.get("/", async (c) => {
         let FEED_BULK_DELETE_BUTTON_EL = null;
         let FEED_SELECT_ALL_EL = null;
         let FEED_FILTER_TIMER = null;
+        let FEED_SORT_KEY = 'title';
+        let FEED_SORT_DIR = 'asc';
+        const FEED_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
         function initFeedUI() {
           FEED_ROWS = Array.from(document.querySelectorAll('.feed-row'));
@@ -781,6 +823,8 @@ app.get("/", async (c) => {
           FEED_SELECTED_COUNT_EL = document.getElementById('selected-feed-count');
           FEED_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-feeds-button');
           FEED_SELECT_ALL_EL = document.getElementById('select-all-feeds');
+          setupFeedTableResizing();
+          setupFeedTableSorting();
           updateFeedSelectionState();
         }
 
@@ -789,6 +833,175 @@ app.get("/", async (c) => {
             clearTimeout(FEED_FILTER_TIMER);
           }
           FEED_FILTER_TIMER = setTimeout(filterFeedRows, 120);
+        }
+
+        function getSortValue(row, key) {
+          const prop = 'sort' + key.charAt(0).toUpperCase() + key.slice(1);
+          return (row.dataset && row.dataset[prop]) ? row.dataset[prop] : '';
+        }
+
+        function updateFeedSortIndicators(table) {
+          const headerCells = Array.from(table.querySelectorAll('th[data-sort-key]'));
+          headerCells.forEach((th) => {
+            const key = th.getAttribute('data-sort-key') || '';
+            const indicator = th.querySelector('.sort-indicator');
+            const active = key === FEED_SORT_KEY;
+
+            if (indicator) {
+              indicator.textContent = active ? (FEED_SORT_DIR === 'asc' ? '^' : 'v') : '';
+            }
+            th.setAttribute('aria-sort', active ? (FEED_SORT_DIR === 'asc' ? 'ascending' : 'descending') : 'none');
+          });
+        }
+
+        function sortFeedTableBy(key) {
+          const table = document.querySelector('table.table-feeds');
+          const tbody = document.getElementById('feed-table-body');
+          if (!table || !tbody) return;
+
+          if (FEED_SORT_KEY === key) {
+            FEED_SORT_DIR = FEED_SORT_DIR === 'asc' ? 'desc' : 'asc';
+          } else {
+            FEED_SORT_KEY = key;
+            FEED_SORT_DIR = 'asc';
+          }
+
+          const dirMultiplier = FEED_SORT_DIR === 'asc' ? 1 : -1;
+          const rows = Array.from(tbody.querySelectorAll('.feed-row'));
+          rows.sort((a, b) => {
+            const av = getSortValue(a, FEED_SORT_KEY);
+            const bv = getSortValue(b, FEED_SORT_KEY);
+            return dirMultiplier * FEED_COLLATOR.compare(av, bv);
+          });
+
+          const fragment = document.createDocumentFragment();
+          rows.forEach((row) => fragment.appendChild(row));
+          tbody.appendChild(fragment);
+
+          updateFeedSortIndicators(table);
+        }
+
+        function setupFeedTableSorting() {
+          const table = document.querySelector('table.table-feeds');
+          if (!table) return;
+
+          table.querySelectorAll('button.th-button[data-sort-key]').forEach((button) => {
+            button.addEventListener('click', () => {
+              const key = button.getAttribute('data-sort-key') || '';
+              if (!key) return;
+              sortFeedTableBy(key);
+            });
+          });
+
+          updateFeedSortIndicators(table);
+        }
+
+        function setupFeedTableResizing() {
+          const table = document.querySelector('table.table-feeds');
+          if (!table) return;
+
+          const storageKey = 'email-to-rss.admin.feedsTable.colWidths';
+          const minWidths = {
+            title: 220,
+            feedId: 120,
+            email: 160,
+            rss: 160,
+            actions: 160,
+          };
+          const defaultWidths = {
+            title: 340,
+            feedId: 160,
+            email: 220,
+            rss: 220,
+            actions: 200,
+          };
+
+          const cols = Array.from(table.querySelectorAll('colgroup col'));
+          const colByKey = {};
+          cols.forEach((col) => {
+            const key = col.getAttribute('data-col');
+            if (key) colByKey[key] = col;
+          });
+
+          // Restore widths
+          try {
+            const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            Object.keys(saved || {}).forEach((key) => {
+              const px = Number(saved[key]);
+              if (!colByKey[key] || !Number.isFinite(px)) return;
+              colByKey[key].style.width = px + 'px';
+            });
+          } catch {
+            // Ignore bad localStorage values
+          }
+
+          const persist = () => {
+            try {
+              const out = {};
+              Object.keys(colByKey).forEach((key) => {
+                if (key === 'select') return;
+                const px = parseInt(colByKey[key].style.width || '0', 10);
+                if (Number.isFinite(px) && px > 0) out[key] = px;
+              });
+              localStorage.setItem(storageKey, JSON.stringify(out));
+            } catch {
+              // localStorage may be unavailable in some modes; ignore
+            }
+          };
+
+          let active = null;
+          let rafId = 0;
+          let pendingWidth = 0;
+
+          table.querySelectorAll('.col-resizer').forEach((handle) => {
+            handle.addEventListener('pointerdown', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              const key = handle.getAttribute('data-col');
+              const col = key ? colByKey[key] : null;
+              if (!key || !col) return;
+
+              const th = handle.closest('th');
+              const startWidth = th ? th.getBoundingClientRect().width : parseInt(col.style.width || '0', 10) || 120;
+
+              active = { key, col, startX: event.clientX, startWidth };
+              document.body.classList.add('is-resizing');
+              handle.setPointerCapture(event.pointerId);
+            });
+
+            handle.addEventListener('pointermove', (event) => {
+              if (!active) return;
+              const minPx = minWidths[active.key] || 120;
+              const nextWidth = Math.max(minPx, Math.round(active.startWidth + (event.clientX - active.startX)));
+              pendingWidth = nextWidth;
+              if (rafId) return;
+              rafId = requestAnimationFrame(() => {
+                active.col.style.width = pendingWidth + 'px';
+                rafId = 0;
+              });
+            });
+
+            const finish = () => {
+              if (!active) return;
+              active = null;
+              document.body.classList.remove('is-resizing');
+              persist();
+            };
+            handle.addEventListener('pointerup', finish);
+            handle.addEventListener('pointercancel', finish);
+
+            handle.addEventListener('dblclick', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const key = handle.getAttribute('data-col');
+              const col = key ? colByKey[key] : null;
+              const px = key ? defaultWidths[key] : null;
+              if (!key || !col || !px) return;
+              col.style.width = px + 'px';
+              persist();
+            });
+          });
         }
 
         function confirmDelete(feedId) {
@@ -1341,6 +1554,12 @@ app.get("/feeds/:feedId/emails", async (c) => {
                 >
                   <div class="table-wrap">
                     <table class="table table-emails">
+                      <colgroup>
+                        <col data-col="select" style="width: 44px;" />
+                        <col data-col="subject" style="width: 520px;" />
+                        <col data-col="receivedAt" style="width: 220px;" />
+                        <col data-col="actions" style="width: 200px;" />
+                      </colgroup>
                       <thead>
                         <tr>
                           <th>
@@ -1350,21 +1569,38 @@ app.get("/feeds/:feedId/emails", async (c) => {
                               onchange="toggleAllEmails(this.checked)"
                             />
                           </th>
-                          <th>Subject</th>
-                          <th>Received</th>
-                          <th>Actions</th>
+                          <th class="th-resizable" data-sort-key="subject" aria-sort="none">
+                            <button type="button" class="th-button" data-sort-key="subject">
+                              Subject <span class="sort-indicator" aria-hidden="true"></span>
+                            </button>
+                            <div class="col-resizer" data-col="subject" title="Resize"></div>
+                          </th>
+                          <th class="th-resizable" data-sort-key="receivedAt" aria-sort="none">
+                            <button type="button" class="th-button" data-sort-key="receivedAt">
+                              Received <span class="sort-indicator" aria-hidden="true"></span>
+                            </button>
+                            <div class="col-resizer" data-col="receivedAt" title="Resize"></div>
+                          </th>
+                          <th class="th-resizable">
+                            <span>Actions</span>
+                            <div class="col-resizer" data-col="actions" title="Resize"></div>
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         ${feedMetadata.emails.map((email: EmailMetadata) => {
                           const subjectDisplay = clampText(email.subject, 180);
                           const subjectHover = clampText(email.subject, 1000);
+                          const sortSubject = subjectHover.toLowerCase();
+                          const sortReceivedAt = String(email.receivedAt);
                           const searchHaystack = clampText(email.subject, 320).toLowerCase();
 
                           return html`
                             <tr
                               class="email-row"
                               data-search="${searchHaystack}"
+                              data-sort-subject="${sortSubject}"
+                              data-sort-received-at="${sortReceivedAt}"
                             >
                               <td>
                                 <input
@@ -1433,6 +1669,9 @@ app.get("/feeds/:feedId/emails", async (c) => {
         let EMAIL_BULK_DELETE_BUTTON_EL = null;
         let EMAIL_SELECT_ALL_EL = null;
         let EMAIL_FILTER_TIMER = null;
+        let EMAIL_SORT_KEY = 'receivedAt';
+        let EMAIL_SORT_DIR = 'desc';
+        const EMAIL_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
         function initEmailUI() {
           EMAIL_ROWS = Array.from(document.querySelectorAll('.email-row'));
@@ -1440,6 +1679,8 @@ app.get("/feeds/:feedId/emails", async (c) => {
           EMAIL_SELECTED_COUNT_EL = document.getElementById('selected-email-count');
           EMAIL_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-emails-button');
           EMAIL_SELECT_ALL_EL = document.getElementById('select-all-emails');
+          setupEmailTableResizing();
+          setupEmailTableSorting();
           updateEmailSelectionState();
         }
 
@@ -1448,6 +1689,171 @@ app.get("/feeds/:feedId/emails", async (c) => {
             clearTimeout(EMAIL_FILTER_TIMER);
           }
           EMAIL_FILTER_TIMER = setTimeout(filterEmailRows, 120);
+        }
+
+        function getEmailSortValue(row, key) {
+          const prop = 'sort' + key.charAt(0).toUpperCase() + key.slice(1);
+          return (row.dataset && row.dataset[prop]) ? row.dataset[prop] : '';
+        }
+
+        function updateEmailSortIndicators(table) {
+          const headerCells = Array.from(table.querySelectorAll('th[data-sort-key]'));
+          headerCells.forEach((th) => {
+            const key = th.getAttribute('data-sort-key') || '';
+            const indicator = th.querySelector('.sort-indicator');
+            const active = key === EMAIL_SORT_KEY;
+
+            if (indicator) {
+              indicator.textContent = active ? (EMAIL_SORT_DIR === 'asc' ? '^' : 'v') : '';
+            }
+            th.setAttribute('aria-sort', active ? (EMAIL_SORT_DIR === 'asc' ? 'ascending' : 'descending') : 'none');
+          });
+        }
+
+        function sortEmailTableBy(key) {
+          const table = document.querySelector('table.table-emails');
+          const tbody = table ? table.querySelector('tbody') : null;
+          if (!table || !tbody) return;
+
+          if (EMAIL_SORT_KEY === key) {
+            EMAIL_SORT_DIR = EMAIL_SORT_DIR === 'asc' ? 'desc' : 'asc';
+          } else {
+            EMAIL_SORT_KEY = key;
+            // Default Received sorting to newest-first
+            EMAIL_SORT_DIR = key === 'receivedAt' ? 'desc' : 'asc';
+          }
+
+          const dirMultiplier = EMAIL_SORT_DIR === 'asc' ? 1 : -1;
+          const rows = Array.from(tbody.querySelectorAll('.email-row'));
+          rows.sort((a, b) => {
+            const av = getEmailSortValue(a, EMAIL_SORT_KEY);
+            const bv = getEmailSortValue(b, EMAIL_SORT_KEY);
+            return dirMultiplier * EMAIL_COLLATOR.compare(av, bv);
+          });
+
+          const fragment = document.createDocumentFragment();
+          rows.forEach((row) => fragment.appendChild(row));
+          tbody.appendChild(fragment);
+
+          updateEmailSortIndicators(table);
+        }
+
+        function setupEmailTableSorting() {
+          const table = document.querySelector('table.table-emails');
+          if (!table) return;
+
+          table.querySelectorAll('button.th-button[data-sort-key]').forEach((button) => {
+            button.addEventListener('click', () => {
+              const key = button.getAttribute('data-sort-key') || '';
+              if (!key) return;
+              sortEmailTableBy(key);
+            });
+          });
+
+          updateEmailSortIndicators(table);
+        }
+
+        function setupEmailTableResizing() {
+          const table = document.querySelector('table.table-emails');
+          if (!table) return;
+
+          const storageKey = 'email-to-rss.admin.emailsTable.colWidths';
+          const minWidths = {
+            subject: 240,
+            receivedAt: 180,
+            actions: 160,
+          };
+          const defaultWidths = {
+            subject: 520,
+            receivedAt: 220,
+            actions: 200,
+          };
+
+          const cols = Array.from(table.querySelectorAll('colgroup col'));
+          const colByKey = {};
+          cols.forEach((col) => {
+            const key = col.getAttribute('data-col');
+            if (key) colByKey[key] = col;
+          });
+
+          try {
+            const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            Object.keys(saved || {}).forEach((key) => {
+              const px = Number(saved[key]);
+              if (!colByKey[key] || !Number.isFinite(px)) return;
+              colByKey[key].style.width = px + 'px';
+            });
+          } catch {
+            // Ignore bad localStorage values
+          }
+
+          const persist = () => {
+            try {
+              const out = {};
+              Object.keys(colByKey).forEach((key) => {
+                if (key === 'select') return;
+                const px = parseInt(colByKey[key].style.width || '0', 10);
+                if (Number.isFinite(px) && px > 0) out[key] = px;
+              });
+              localStorage.setItem(storageKey, JSON.stringify(out));
+            } catch {
+              // ignore
+            }
+          };
+
+          let active = null;
+          let rafId = 0;
+          let pendingWidth = 0;
+
+          table.querySelectorAll('.col-resizer').forEach((handle) => {
+            handle.addEventListener('pointerdown', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              const key = handle.getAttribute('data-col');
+              const col = key ? colByKey[key] : null;
+              if (!key || !col) return;
+
+              const th = handle.closest('th');
+              const startWidth = th ? th.getBoundingClientRect().width : parseInt(col.style.width || '0', 10) || 200;
+
+              active = { key, col, startX: event.clientX, startWidth };
+              document.body.classList.add('is-resizing');
+              handle.setPointerCapture(event.pointerId);
+            });
+
+            handle.addEventListener('pointermove', (event) => {
+              if (!active) return;
+              const minPx = minWidths[active.key] || 180;
+              const nextWidth = Math.max(minPx, Math.round(active.startWidth + (event.clientX - active.startX)));
+              pendingWidth = nextWidth;
+              if (rafId) return;
+              rafId = requestAnimationFrame(() => {
+                active.col.style.width = pendingWidth + 'px';
+                rafId = 0;
+              });
+            });
+
+            const finish = () => {
+              if (!active) return;
+              active = null;
+              document.body.classList.remove('is-resizing');
+              persist();
+            };
+            handle.addEventListener('pointerup', finish);
+            handle.addEventListener('pointercancel', finish);
+
+            handle.addEventListener('dblclick', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const key = handle.getAttribute('data-col');
+              const col = key ? colByKey[key] : null;
+              const px = key ? defaultWidths[key] : null;
+              if (!key || !col || !px) return;
+              col.style.width = px + 'px';
+              persist();
+            });
+          });
         }
 
         function confirmDeleteEmail(emailKey, feedId) {

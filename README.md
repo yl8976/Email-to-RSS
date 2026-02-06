@@ -14,6 +14,7 @@ Email-to-RSS keeps the same workflow while avoiding shared domains and shared da
 
 - One-click feed creation from an admin dashboard
 - Bulk feed/email deletion from the admin dashboard (safe checkbox-based flow)
+- Resizable + sortable table columns in the admin dashboard (Table view)
 - Unique newsletter addresses per feed (for example `apple.mountain.42@yourdomain.com`)
 - ForwardEmail webhook ingestion with source-IP verification
 - Optional per-feed sender allowlist (`email@domain.com` or `domain.com`)
@@ -112,6 +113,7 @@ npm run build
 2. Switch to **Table** view.
 3. Use the search box to filter obvious spam feeds.
    - Long titles/URLs are truncated; hover to see the full value. Click to copy.
+   - Drag the column separators to resize; click headers to sort (double-click a separator to reset width).
 4. Select rows and use **Delete Selected Feeds**.
 5. For legitimate feeds that got spam emails, open **Emails**, filter by subject, then **Delete Selected Emails**.
 

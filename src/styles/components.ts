@@ -607,45 +607,74 @@ export const componentStyles = `
     vertical-align: top;
   }
 
-  /* Fixed column sizing so long spam titles don't blow up layout */
-  table.table.table-feeds th:nth-child(1),
-  table.table.table-feeds td:nth-child(1) {
-    width: 44px;
+  /* Resizable headers */
+  th.th-resizable {
+    position: relative;
+    padding-right: 18px;
   }
 
-  table.table.table-feeds th:nth-child(3),
-  table.table.table-feeds td:nth-child(3) {
-    width: 170px;
+  .th-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    user-select: none;
   }
 
-  table.table.table-feeds th:nth-child(4),
-  table.table.table-feeds td:nth-child(4) {
-    width: 260px;
+  .th-button:hover {
+    color: var(--color-text-primary);
   }
 
-  table.table.table-feeds th:nth-child(5),
-  table.table.table-feeds td:nth-child(5) {
-    width: 280px;
+  .sort-indicator {
+    width: 12px;
+    height: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.75;
+    font-size: 12px;
   }
 
-  table.table.table-feeds th:nth-child(6),
-  table.table.table-feeds td:nth-child(6) {
-    width: 220px;
+  .col-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
   }
 
-  table.table.table-emails th:nth-child(1),
-  table.table.table-emails td:nth-child(1) {
-    width: 44px;
+  .col-resizer:after {
+    content: "";
+    position: absolute;
+    right: 5px;
+    top: 24%;
+    bottom: 24%;
+    width: 1px;
+    background: var(--color-border);
+    opacity: 0.9;
+    border-radius: 1px;
   }
 
-  table.table.table-emails th:nth-child(3),
-  table.table.table-emails td:nth-child(3) {
-    width: 200px;
+  th.th-resizable:hover .col-resizer:after {
+    background: rgba(255, 255, 255, 0.2);
   }
 
-  table.table.table-emails th:nth-child(4),
-  table.table.table-emails td:nth-child(4) {
-    width: 200px;
+  @media (prefers-color-scheme: light) {
+    th.th-resizable:hover .col-resizer:after {
+      background: rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  body.is-resizing {
+    cursor: col-resize;
+    user-select: none;
   }
 
   table.table thead th {
