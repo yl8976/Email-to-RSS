@@ -1877,7 +1877,7 @@ app.post("/feeds/bulk-delete", async (c) => {
           {
             ok: false,
             error:
-              "Bulk feed delete failed. This can happen if Cloudflare is rate-limiting requests or if the Worker hit a plan quota. Please try again.",
+              "Server error while deleting feeds. This can happen if Cloudflare is rate-limiting requests or if the Worker hit a plan quota. Please try again.",
           },
           500,
         )
@@ -3258,7 +3258,7 @@ app.post("/feeds/:feedId/emails/bulk-delete", async (c) => {
           {
             ok: false,
             error:
-              "Bulk email delete failed. This can happen if Cloudflare is rate-limiting requests or if the Worker hit a plan quota. Please try again.",
+              "Server error while deleting emails. This can happen if Cloudflare is rate-limiting requests or if the Worker hit a plan quota. Please try again.",
           },
           500,
         )
