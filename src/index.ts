@@ -118,7 +118,7 @@ api.use('/inbound', async (c, next) => {
     return c.text('Unauthorized', 401);
   }
   
-  console.log(`Authorized webhook request from ForwardEmail.net (${clientIP}`);
+  console.log(`Authorized webhook request from ForwardEmail.net (${clientIP})`);
   await next();
 });
 

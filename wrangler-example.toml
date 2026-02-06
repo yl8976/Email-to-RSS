@@ -1,6 +1,6 @@
 name = "email-to-rss"
 main = "src/index.ts"
-compatibility_date = "2024-09-23"
+compatibility_date = "REPLACE_WITH_COMPATIBILITY_DATE"
 compatibility_flags = ["nodejs_compat"]
 
 # Global KV Namespace bindings

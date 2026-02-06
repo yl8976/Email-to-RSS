@@ -1,4 +1,5 @@
 import { Context, Hono } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { html, raw } from 'hono/html';
 import { z } from 'zod';
 import { Env, FeedConfig, FeedList, FeedMetadata, EmailMetadata, EmailData, FeedListItem } from '../types';
@@ -28,7 +29,7 @@ async function authMiddleware(c: Context, next: () => Promise<void>) {
     return next();
   }
 
-  const authCookie = c.req.cookie('admin_auth');
+  const authCookie = getCookie(c, 'admin_auth');
   if (!authCookie || authCookie !== 'true') {
     return c.redirect('/admin/login');
   }

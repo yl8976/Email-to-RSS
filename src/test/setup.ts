@@ -1,5 +1,5 @@
-import { beforeAll, afterAll, afterEach } from 'vitest';
-import { setupServer } from 'msw/node';
+import { beforeAll, afterAll, afterEach } from "vitest";
+import { setupServer } from "msw/node";
 
 /**
  * Mock implementation of Cloudflare Workers runtime environment
@@ -29,14 +29,27 @@ declare global {
 class MockKV {
   private store: Map<string, any> = new Map();
 
-  async get(key: string, type: 'text' | 'json' | 'arrayBuffer' | 'stream' = 'text') {
+  async get(
+    key: string,
+    typeOrOptions:
+      | "text"
+      | "json"
+      | "arrayBuffer"
+      | "stream"
+      | { type: "text" | "json" | "arrayBuffer" | "stream" } = "text",
+  ) {
+    const type =
+      typeof typeOrOptions === "string" ? typeOrOptions : typeOrOptions.type;
     const value = this.store.get(key);
     if (!value) return null;
-    return type === 'json' ? JSON.parse(value) : value;
+    return type === "json" ? JSON.parse(value) : value;
   }
 
   async put(key: string, value: any) {
-    this.store.set(key, typeof value === 'string' ? value : JSON.stringify(value));
+    this.store.set(
+      key,
+      typeof value === "string" ? value : JSON.stringify(value),
+    );
     return undefined; // Match CF Workers KV behavior
   }
 
@@ -47,14 +60,14 @@ class MockKV {
 
   async list(options?: { prefix?: string; cursor?: string; limit?: number }) {
     const keys = Array.from(this.store.keys())
-      .filter(key => !options?.prefix || key.startsWith(options.prefix))
+      .filter((key) => !options?.prefix || key.startsWith(options.prefix))
       .slice(0, options?.limit || undefined)
-      .map(name => ({ name }));
-    
+      .map((name) => ({ name }));
+
     return {
       keys,
       list_complete: true,
-      cursor: ''
+      cursor: "",
     };
   }
 }
@@ -72,21 +85,33 @@ class MockCache implements Cache {
     return undefined;
   }
 
-  async match(request: RequestInfo, options?: CacheQueryOptions): Promise<Response | undefined> {
+  async match(
+    request: RequestInfo,
+    options?: CacheQueryOptions,
+  ): Promise<Response | undefined> {
     const key = request instanceof Request ? request.url : request;
     const response = this.store.get(key);
     return response?.clone();
   }
 
-  async delete(request: RequestInfo, options?: CacheQueryOptions): Promise<boolean> {
+  async delete(
+    request: RequestInfo,
+    options?: CacheQueryOptions,
+  ): Promise<boolean> {
     const key = request instanceof Request ? request.url : request;
     return this.store.delete(key);
   }
 
   // Required Cache interface methods with minimal implementations
-  async add(): Promise<void> { throw new Error('Not implemented'); }
-  async addAll(): Promise<void> { throw new Error('Not implemented'); }
-  async keys(): Promise<Request[]> { return []; }
+  async add(): Promise<void> {
+    throw new Error("Not implemented");
+  }
+  async addAll(): Promise<void> {
+    throw new Error("Not implemented");
+  }
+  async keys(): Promise<Request[]> {
+    return [];
+  }
 }
 
 // Create MSW server for mocking external requests
@@ -95,37 +120,37 @@ export const server = setupServer();
 // Setup before tests
 beforeAll(() => {
   // Setup MSW server
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledRequest: "error" });
 
   // Mock Cloudflare Workers runtime globals
   global.caches = {
     default: new MockCache(),
-    open: async () => new MockCache()
+    open: async () => new MockCache(),
   } as unknown as CacheStorage;
 
   // Mock crypto for generating random values
   if (!global.crypto) {
-    global.crypto = require('crypto').webcrypto;
+    global.crypto = require("crypto").webcrypto;
   }
 
   // Ensure other required globals are available
   if (!global.FormData) {
-    const { FormData } = require('undici');
+    const { FormData } = require("undici");
     global.FormData = FormData;
   }
 
   if (!global.Headers) {
-    const { Headers } = require('undici');
+    const { Headers } = require("undici");
     global.Headers = Headers;
   }
 
   if (!global.Request) {
-    const { Request } = require('undici');
+    const { Request } = require("undici");
     global.Request = Request;
   }
 
   if (!global.Response) {
-    const { Response } = require('undici');
+    const { Response } = require("undici");
     global.Response = Response;
   }
 });
@@ -145,6 +170,6 @@ afterEach(() => {
  */
 export const createMockEnv = () => ({
   EMAIL_STORAGE: new MockKV(),
-  DOMAIN: 'test.getmynews.app',
-  ADMIN_PASSWORD: 'test-password',
+  DOMAIN: "test.getmynews.app",
+  ADMIN_PASSWORD: "test-password",
 });
