@@ -1265,7 +1265,7 @@ app.get("/", async (c) => {
 	          return confirm(
 	            'Delete ' +
 	              selected +
-	              ' selected feed(s)? This will also delete all emails inside those feeds.' +
+	              ' selected feed(s)? This disables the feeds immediately. Stored emails are cleaned up best-effort and may take a while.' +
 	              extra,
 	          );
 	        }
@@ -1376,32 +1376,53 @@ app.get("/", async (c) => {
 	              updateFeedMatchCount();
 	              updateFeedSelectionState();
 
-	              // If a batch fails for some feeds, retry those one-by-one using the single delete endpoint.
-	              if (failedIds.length > 0) {
+		              // If a batch fails for some feeds, retry those one-by-one using the bulk-delete
+		              // endpoint with a single id (keeps semantics consistent and avoids hiding active feeds).
+		              if (failedIds.length > 0) {
 	                if (toast && toast.update) {
 	                  toast.update('Retrying ' + failedIds.length + ' failed feed(s) one-by-one...', { type: 'info' });
 	                }
 
-	                const stillFailed = [];
-	                for (let j = 0; j < failedIds.length; j++) {
-	                  const feedId = String(failedIds[j] || '');
-	                  if (!feedId) continue;
-	                  try {
-	                    const retryRes = await fetch('/admin/feeds/' + encodeURIComponent(feedId) + '/delete?view=table', {
-	                      method: 'POST',
-	                      headers: { 'Accept': 'application/json' },
-	                      credentials: 'same-origin',
-	                    });
-	                    if (window.parseJsonResponseOrThrow) {
-	                      await window.parseJsonResponseOrThrow(retryRes, { prefix: 'Retry delete failed' });
-	                    } else if (!retryRes.ok) {
-	                      throw new Error('Retry delete failed (HTTP ' + retryRes.status + ')');
-	                    }
-	                    removeFeedRowsById([feedId]);
-	                    deletedTotal += 1;
-	                  } catch (e) {
-	                    stillFailed.push(feedId);
-	                  }
+		                const stillFailed = [];
+		                for (let j = 0; j < failedIds.length; j++) {
+		                  const feedId = String(failedIds[j] || '');
+		                  if (!feedId) continue;
+		                  try {
+		                    const retryRes = await fetch('/admin/feeds/bulk-delete', {
+		                      method: 'POST',
+		                      headers: {
+		                        'Content-Type': 'application/json',
+		                        'Accept': 'application/json',
+		                      },
+		                      credentials: 'same-origin',
+		                      body: JSON.stringify({ feedIds: [feedId] }),
+		                    });
+
+		                    let retryData = {};
+		                    if (window.parseJsonResponseOrThrow) {
+		                      retryData = await window.parseJsonResponseOrThrow(retryRes, { prefix: 'Retry delete failed' });
+		                    } else {
+		                      retryData = await retryRes.json().catch(() => ({}));
+		                      if (!retryRes.ok) {
+		                        const message = retryData && retryData.error ? String(retryData.error) : ('Retry delete failed (HTTP ' + retryRes.status + ')');
+		                        throw new Error(message);
+		                      }
+		                    }
+
+		                    const retryDeleted = Array.isArray(retryData.deletedFeedIds) ? retryData.deletedFeedIds : [];
+		                    const retryFailed = Array.isArray(retryData.failedFeedIds) ? retryData.failedFeedIds : [];
+
+		                    if (retryDeleted.includes(feedId)) {
+		                      removeFeedRowsById([feedId]);
+		                      deletedTotal += 1;
+		                    } else if (retryFailed.includes(feedId)) {
+		                      stillFailed.push(feedId);
+		                    } else {
+		                      stillFailed.push(feedId);
+		                    }
+		                  } catch (e) {
+		                    stillFailed.push(feedId);
+		                  }
 
 	                  if (toast && toast.update) {
 	                    toast.update('Retrying... (' + (j + 1) + ' of ' + failedIds.length + ')', { type: 'info' });
