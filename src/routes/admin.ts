@@ -632,9 +632,7 @@ app.get("/", async (c) => {
                               ? html`<p class="feed-description">
                                   <span title="${descHover}">${descDisplay}</span>
                                 </p>`
-                              : html`<p class="feed-description empty">
-                                  <i>No description</i>
-                                </p>`}
+                              : ""}
                           </div>
 
                           <div style="margin-bottom: var(--spacing-md);">
