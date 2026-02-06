@@ -39,6 +39,17 @@ function parseAllowedSenders(rawAllowedSenders: string): string[] {
     .filter(Boolean);
 }
 
+function clampText(value: string, maxLen: number): string {
+  const raw = `${value || ""}`;
+  if (raw.length <= maxLen) {
+    return raw.trim();
+  }
+  if (maxLen <= 3) {
+    return raw.slice(0, maxLen).trim();
+  }
+  return `${raw.slice(0, maxLen - 3).trimEnd()}...`;
+}
+
 // Prevent accidental caching of admin pages and redirects.
 app.use("*", async (c, next) => {
   c.header("Cache-Control", "no-store, max-age=0");
@@ -227,19 +238,12 @@ app.get("/", async (c) => {
   // List all feeds
   const feedList = await listAllFeeds(emailStorage);
 
-  // Fetch full feed configs to get descriptions
-  const feedsWithConfig = await Promise.all(
-    feedList.map(async (feed) => {
-      const configKey = `feed:${feed.id}:config`;
-      const config = (await emailStorage.get(configKey, {
-        type: "json",
-      })) as FeedConfig | null;
-      return {
-        ...feed,
-        description: config?.description || "",
-      };
-    }),
-  );
+  // Keep the dashboard fast: avoid N KV reads for N feeds.
+  // We store title/description in `feeds:list` (description is optional for older data).
+  const feedsWithConfig = feedList.map((feed) => ({
+    ...feed,
+    description: feed.description || "",
+  }));
 
   const viewHref = (nextView: "list" | "table") => {
     const nextUrl = new URL(url);
@@ -272,7 +276,7 @@ app.get("/", async (c) => {
     layout(
       "Dashboard",
       html`
-        <div class="container fade-in">
+        <div class="container ${view === "table" ? "container-wide" : ""} fade-in">
           <div class="header-with-actions">
             <div class="header-title">
               <h1>Email to RSS Admin</h1>
@@ -354,8 +358,8 @@ app.get("/", async (c) => {
                           type="search"
                           id="feed-search"
                           class="search"
-                          placeholder="Search feed title, id, or description"
-                          oninput="filterFeedRows()"
+                          placeholder="Search title, feed id, or description"
+                          oninput="scheduleFeedFilter()"
                         />
                         <button
                           type="button"
@@ -404,11 +408,20 @@ app.get("/", async (c) => {
                             </tr>
                           </thead>
                           <tbody id="feed-table-body">
-                            ${feedsWithConfig.map(
-                              (feed) => html`
+                            ${feedsWithConfig.map((feed) => {
+                              const emailAddress = `${feed.id}@${env.DOMAIN}`;
+                              const rssUrl = `https://${env.DOMAIN}/rss/${feed.id}`;
+                              const titleDisplay = clampText(feed.title, 160);
+                              const titleHover = clampText(feed.title, 1000);
+                              const descDisplay = clampText(feed.description || "", 220);
+                              const descHover = clampText(feed.description || "", 1000);
+                              const searchHaystack =
+                                `${clampText(feed.title, 320)} ${feed.id} ${clampText(feed.description || "", 320)}`.toLowerCase();
+
+                              return html`
                                 <tr
                                   class="feed-row"
-                                  data-search="${`${feed.title} ${feed.id} ${feed.description || ""}`.toLowerCase()}"
+                                  data-search="${searchHaystack}"
                                 >
                                   <td>
                                     <input
@@ -420,13 +433,16 @@ app.get("/", async (c) => {
                                     />
                                   </td>
                                   <td>
-                                    <strong>${feed.title}</strong>
+                                    <strong class="truncate" title="${titleHover}"
+                                      >${titleDisplay}</strong
+                                    >
                                     ${feed.description
                                       ? html`<div
-                                          class="muted"
+                                          class="muted truncate"
                                           style="font-size: var(--font-size-sm); margin-top: 4px;"
+                                          title="${descHover}"
                                         >
-                                          ${feed.description}
+                                          ${descDisplay}
                                         </div>`
                                       : ""}
                                   </td>
@@ -436,8 +452,9 @@ app.get("/", async (c) => {
                                       <div class="copyable-content">
                                         <span
                                           class="copyable-value"
-                                          data-copy="${feed.id}@${env.DOMAIN}"
-                                          >${feed.id}@${env.DOMAIN}</span
+                                          data-copy="${emailAddress}"
+                                          title="${emailAddress}"
+                                          >${emailAddress}</span
                                         >
                                         <div class="copy-icon-container">
                                           <svg
@@ -487,8 +504,9 @@ app.get("/", async (c) => {
                                       <div class="copyable-content">
                                         <span
                                           class="copyable-value"
-                                          data-copy="https://${env.DOMAIN}/rss/${feed.id}"
-                                          >https://${env.DOMAIN}/rss/${feed.id}</span
+                                          data-copy="${rssUrl}"
+                                          title="${rssUrl}"
+                                          >${rssUrl}</span
                                         >
                                         <div class="copy-icon-container">
                                           <svg
@@ -555,8 +573,8 @@ app.get("/", async (c) => {
                                     </div>
                                   </td>
                                 </tr>
-                              `,
-                            )}
+                              `;
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -581,8 +599,8 @@ app.get("/", async (c) => {
                         type="search"
                         id="feed-search"
                         class="search"
-                        placeholder="Search feed title, id, or description"
-                        oninput="filterFeedRows()"
+                        placeholder="Search title, feed id, or description"
+                        oninput="scheduleFeedFilter()"
                       />
                       <span class="pill"
                         >Tip: use Table view for bulk deletion.</span
@@ -591,17 +609,28 @@ app.get("/", async (c) => {
                   </div>
 
                   <ul class="feed-list">
-                    ${feedsWithConfig.map(
-                      (feed) => html`
+                    ${feedsWithConfig.map((feed) => {
+                      const emailAddress = `${feed.id}@${env.DOMAIN}`;
+                      const rssUrl = `https://${env.DOMAIN}/rss/${feed.id}`;
+                      const titleDisplay = clampText(feed.title, 140);
+                      const titleHover = clampText(feed.title, 1000);
+                      const descDisplay = clampText(feed.description || "", 240);
+                      const descHover = clampText(feed.description || "", 1000);
+                      const searchHaystack =
+                        `${clampText(feed.title, 320)} ${feed.id} ${clampText(feed.description || "", 320)}`.toLowerCase();
+
+                      return html`
                         <li
                           class="feed-item card feed-row"
-                          data-search="${`${feed.title} ${feed.id} ${feed.description || ""}`.toLowerCase()}"
+                          data-search="${searchHaystack}"
                         >
                           <div class="feed-header">
-                            <h3 class="feed-title">${feed.title}</h3>
+                            <h3 class="feed-title" title="${titleHover}">
+                              ${titleDisplay}
+                            </h3>
                             ${feed.description
                               ? html`<p class="feed-description">
-                                  ${feed.description}
+                                  <span title="${descHover}">${descDisplay}</span>
                                 </p>`
                               : html`<p class="feed-description empty">
                                   <i>No description</i>
@@ -614,8 +643,9 @@ app.get("/", async (c) => {
                               <div class="copyable-content">
                                 <span
                                   class="copyable-value"
-                                  data-copy="${feed.id}@${env.DOMAIN}"
-                                  >${feed.id}@${env.DOMAIN}</span
+                                  data-copy="${emailAddress}"
+                                  title="${emailAddress}"
+                                  >${emailAddress}</span
                                 >
                                 <div class="copy-icon-container">
                                   <svg
@@ -662,8 +692,9 @@ app.get("/", async (c) => {
                               <div class="copyable-content">
                                 <span
                                   class="copyable-value"
-                                  data-copy="https://${env.DOMAIN}/rss/${feed.id}"
-                                  >https://${env.DOMAIN}/rss/${feed.id}</span
+                                  data-copy="${rssUrl}"
+                                  title="${rssUrl}"
+                                  >${rssUrl}</span
                                 >
                                 <div class="copy-icon-container">
                                   <svg
@@ -731,14 +762,37 @@ app.get("/", async (c) => {
                             </div>
                           </div>
                         </li>
-                      `,
-                    )}
+                      `;
+                    })}
                   </ul>
                 `}
         </div>
 
         <script>
           ${raw(`
+        let FEED_ROWS = [];
+        let FEED_CHECKBOXES = [];
+        let FEED_SELECTED_COUNT_EL = null;
+        let FEED_BULK_DELETE_BUTTON_EL = null;
+        let FEED_SELECT_ALL_EL = null;
+        let FEED_FILTER_TIMER = null;
+
+        function initFeedUI() {
+          FEED_ROWS = Array.from(document.querySelectorAll('.feed-row'));
+          FEED_CHECKBOXES = Array.from(document.querySelectorAll('.feed-select'));
+          FEED_SELECTED_COUNT_EL = document.getElementById('selected-feed-count');
+          FEED_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-feeds-button');
+          FEED_SELECT_ALL_EL = document.getElementById('select-all-feeds');
+          updateFeedSelectionState();
+        }
+
+        function scheduleFeedFilter() {
+          if (FEED_FILTER_TIMER) {
+            clearTimeout(FEED_FILTER_TIMER);
+          }
+          FEED_FILTER_TIMER = setTimeout(filterFeedRows, 120);
+        }
+
         function confirmDelete(feedId) {
           if (confirm('Are you sure you want to delete this feed? This action cannot be undone.')) {
             const currentView = new URL(window.location.href).searchParams.get('view') || 'list';
@@ -751,56 +805,53 @@ app.get("/", async (c) => {
         }
 
         function updateFeedSelectionState() {
-          const checkboxes = Array.from(document.querySelectorAll('.feed-select'));
-          const selected = checkboxes.filter((checkbox) => checkbox.checked);
-          const selectedCount = document.getElementById('selected-feed-count');
-          const bulkDeleteButton = document.getElementById('bulk-delete-feeds-button');
-          const selectAll = document.getElementById('select-all-feeds');
+          if (!FEED_CHECKBOXES.length) {
+            return;
+          }
 
-          if (selectedCount) {
-            selectedCount.textContent = selected.length + ' selected';
+          const selected = FEED_CHECKBOXES.filter((checkbox) => checkbox.checked);
+
+          if (FEED_SELECTED_COUNT_EL) {
+            FEED_SELECTED_COUNT_EL.textContent = selected.length + ' selected';
           }
-          if (bulkDeleteButton) {
-            bulkDeleteButton.disabled = selected.length === 0;
+          if (FEED_BULK_DELETE_BUTTON_EL) {
+            FEED_BULK_DELETE_BUTTON_EL.disabled = selected.length === 0;
           }
-          if (selectAll) {
-            const visibleCheckboxes = checkboxes.filter((checkbox) => checkbox.closest('tr')?.style.display !== 'none');
-            selectAll.checked = visibleCheckboxes.length > 0 && visibleCheckboxes.every((checkbox) => checkbox.checked);
+          if (FEED_SELECT_ALL_EL) {
+            const visibleCheckboxes = FEED_CHECKBOXES.filter((checkbox) => !(checkbox.closest('tr')?.hidden));
+            FEED_SELECT_ALL_EL.checked = visibleCheckboxes.length > 0 && visibleCheckboxes.every((checkbox) => checkbox.checked);
           }
         }
 
         function toggleAllFeeds(checked) {
-          const checkboxes = document.querySelectorAll('.feed-select');
-          checkboxes.forEach((checkbox) => {
-            if (checkbox.closest('tr')?.style.display !== 'none') {
+          FEED_CHECKBOXES.forEach((checkbox) => {
+            if (!checkbox.closest('tr')?.hidden) {
               checkbox.checked = checked;
             }
-          });
+          })
           updateFeedSelectionState();
         }
 
         function setVisibleFeedSelection(checked) {
-          const checkboxes = document.querySelectorAll('.feed-select');
-          checkboxes.forEach((checkbox) => {
-            if (checkbox.closest('tr')?.style.display !== 'none') {
+          FEED_CHECKBOXES.forEach((checkbox) => {
+            if (!checkbox.closest('tr')?.hidden) {
               checkbox.checked = checked;
             }
-          });
+          })
           updateFeedSelectionState();
         }
 
         function filterFeedRows() {
           const query = (document.getElementById('feed-search')?.value || '').toLowerCase().trim();
-          const rows = document.querySelectorAll('.feed-row');
-          rows.forEach((row) => {
+          FEED_ROWS.forEach((row) => {
             const haystack = row.getAttribute('data-search') || '';
-            row.style.display = !query || haystack.includes(query) ? '' : 'none';
+            row.hidden = !!query && !haystack.includes(query);
           });
           updateFeedSelectionState();
         }
 
         function confirmBulkFeedDelete() {
-          const selected = document.querySelectorAll('.feed-select:checked').length;
+          const selected = FEED_CHECKBOXES.filter((checkbox) => checkbox.checked).length;
           if (selected === 0) {
             return false;
           }
@@ -808,7 +859,7 @@ app.get("/", async (c) => {
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-          updateFeedSelectionState();
+          initFeedUI();
         });
       `)};
         </script>
@@ -869,7 +920,12 @@ app.post("/feeds/create", async (c) => {
     );
 
     // Add feed to the list of all feeds
-    await addFeedToList(emailStorage, feedId, parsedData.title);
+    await addFeedToList(
+      emailStorage,
+      feedId,
+      parsedData.title,
+      parsedData.description,
+    );
 
     // Redirect back to admin page
     return c.redirect(`/admin?view=${view}`);
@@ -1010,7 +1066,12 @@ app.post("/feeds/:feedId/edit", async (c) => {
     );
 
     // Update feed in the list of all feeds
-    await updateFeedInList(emailStorage, feedId, parsedData.title);
+    await updateFeedInList(
+      emailStorage,
+      feedId,
+      parsedData.title,
+      parsedData.description,
+    );
 
     // Redirect back to admin page
     return c.redirect("/admin");
@@ -1122,7 +1183,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
     layout(
       `${feedConfig.title} - Emails`,
       html`
-        <div class="container fade-in">
+        <div class="container container-wide fade-in">
           <div class="header-with-actions">
             <div class="header-title">
               <h1>${feedConfig.title} - Emails</h1>
@@ -1255,7 +1316,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
                       id="email-search"
                       class="search"
                       placeholder="Search email subjects"
-                      oninput="filterEmailRows()"
+                      oninput="scheduleEmailFilter()"
                     />
                   <button
                     type="button"
@@ -1297,11 +1358,15 @@ app.get("/feeds/:feedId/emails", async (c) => {
                         </tr>
                       </thead>
                       <tbody>
-                        ${feedMetadata.emails.map(
-                          (email: EmailMetadata) => html`
+                        ${feedMetadata.emails.map((email: EmailMetadata) => {
+                          const subjectDisplay = clampText(email.subject, 180);
+                          const subjectHover = clampText(email.subject, 1000);
+                          const searchHaystack = clampText(email.subject, 320).toLowerCase();
+
+                          return html`
                             <tr
                               class="email-row"
-                              data-search="${email.subject.toLowerCase()}"
+                              data-search="${searchHaystack}"
                             >
                               <td>
                                 <input
@@ -1312,7 +1377,11 @@ app.get("/feeds/:feedId/emails", async (c) => {
                                   onchange="updateEmailSelectionState()"
                                 />
                               </td>
-                              <td>${email.subject}</td>
+                              <td>
+                                <span class="truncate" title="${subjectHover}"
+                                  >${subjectDisplay}</span
+                                >
+                              </td>
                               <td>
                                 ${new Date(email.receivedAt).toLocaleString()}
                               </td>
@@ -1333,8 +1402,8 @@ app.get("/feeds/:feedId/emails", async (c) => {
                                 </div>
                               </td>
                             </tr>
-                          `,
-                        )}
+                          `;
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1360,6 +1429,29 @@ app.get("/feeds/:feedId/emails", async (c) => {
 
         <script>
           ${raw(`
+        let EMAIL_ROWS = [];
+        let EMAIL_CHECKBOXES = [];
+        let EMAIL_SELECTED_COUNT_EL = null;
+        let EMAIL_BULK_DELETE_BUTTON_EL = null;
+        let EMAIL_SELECT_ALL_EL = null;
+        let EMAIL_FILTER_TIMER = null;
+
+        function initEmailUI() {
+          EMAIL_ROWS = Array.from(document.querySelectorAll('.email-row'));
+          EMAIL_CHECKBOXES = Array.from(document.querySelectorAll('.email-select'));
+          EMAIL_SELECTED_COUNT_EL = document.getElementById('selected-email-count');
+          EMAIL_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-emails-button');
+          EMAIL_SELECT_ALL_EL = document.getElementById('select-all-emails');
+          updateEmailSelectionState();
+        }
+
+        function scheduleEmailFilter() {
+          if (EMAIL_FILTER_TIMER) {
+            clearTimeout(EMAIL_FILTER_TIMER);
+          }
+          EMAIL_FILTER_TIMER = setTimeout(filterEmailRows, 120);
+        }
+
         function confirmDeleteEmail(emailKey, feedId) {
           if (confirm('Are you sure you want to delete this email? This action cannot be undone.')) {
             const form = document.createElement('form');
@@ -1371,56 +1463,53 @@ app.get("/feeds/:feedId/emails", async (c) => {
         }
 
         function updateEmailSelectionState() {
-          const checkboxes = Array.from(document.querySelectorAll('.email-select'));
-          const selected = checkboxes.filter((checkbox) => checkbox.checked);
-          const selectedCount = document.getElementById('selected-email-count');
-          const bulkDeleteButton = document.getElementById('bulk-delete-emails-button');
-          const selectAll = document.getElementById('select-all-emails');
+          if (!EMAIL_CHECKBOXES.length) {
+            return;
+          }
 
-          if (selectedCount) {
-            selectedCount.textContent = selected.length + ' selected';
+          const selected = EMAIL_CHECKBOXES.filter((checkbox) => checkbox.checked);
+
+          if (EMAIL_SELECTED_COUNT_EL) {
+            EMAIL_SELECTED_COUNT_EL.textContent = selected.length + ' selected';
           }
-          if (bulkDeleteButton) {
-            bulkDeleteButton.disabled = selected.length === 0;
+          if (EMAIL_BULK_DELETE_BUTTON_EL) {
+            EMAIL_BULK_DELETE_BUTTON_EL.disabled = selected.length === 0;
           }
-          if (selectAll) {
-            const visibleCheckboxes = checkboxes.filter((checkbox) => checkbox.closest('tr')?.style.display !== 'none');
-            selectAll.checked = visibleCheckboxes.length > 0 && visibleCheckboxes.every((checkbox) => checkbox.checked);
+          if (EMAIL_SELECT_ALL_EL) {
+            const visibleCheckboxes = EMAIL_CHECKBOXES.filter((checkbox) => !(checkbox.closest('tr')?.hidden));
+            EMAIL_SELECT_ALL_EL.checked = visibleCheckboxes.length > 0 && visibleCheckboxes.every((checkbox) => checkbox.checked);
           }
         }
 
         function toggleAllEmails(checked) {
-          const checkboxes = document.querySelectorAll('.email-select');
-          checkboxes.forEach((checkbox) => {
-            if (checkbox.closest('tr')?.style.display !== 'none') {
+          EMAIL_CHECKBOXES.forEach((checkbox) => {
+            if (!checkbox.closest('tr')?.hidden) {
               checkbox.checked = checked;
             }
-          });
+          })
           updateEmailSelectionState();
         }
 
         function setVisibleEmailSelection(checked) {
-          const checkboxes = document.querySelectorAll('.email-select');
-          checkboxes.forEach((checkbox) => {
-            if (checkbox.closest('tr')?.style.display !== 'none') {
+          EMAIL_CHECKBOXES.forEach((checkbox) => {
+            if (!checkbox.closest('tr')?.hidden) {
               checkbox.checked = checked;
             }
-          });
+          })
           updateEmailSelectionState();
         }
 
         function filterEmailRows() {
           const query = (document.getElementById('email-search')?.value || '').toLowerCase().trim();
-          const rows = document.querySelectorAll('.email-row');
-          rows.forEach((row) => {
+          EMAIL_ROWS.forEach((row) => {
             const haystack = row.getAttribute('data-search') || '';
-            row.style.display = !query || haystack.includes(query) ? '' : 'none';
+            row.hidden = !!query && !haystack.includes(query);
           });
           updateEmailSelectionState();
         }
 
         function confirmBulkEmailDelete() {
-          const selected = document.querySelectorAll('.email-select:checked').length;
+          const selected = EMAIL_CHECKBOXES.filter((checkbox) => checkbox.checked).length;
           if (selected === 0) {
             return false;
           }
@@ -1428,7 +1517,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-          updateEmailSelectionState();
+          initEmailUI();
         });
       `)};
         </script>
@@ -1910,6 +1999,7 @@ async function addFeedToList(
   emailStorage: KVNamespace,
   feedId: string,
   title: string,
+  description?: string,
 ): Promise<void> {
   try {
     const feedListKey = "feeds:list";
@@ -1921,6 +2011,7 @@ async function addFeedToList(
     feedList.feeds.push({
       id: feedId,
       title,
+      description,
     });
 
     // Store updated list
@@ -1935,6 +2026,7 @@ async function updateFeedInList(
   emailStorage: KVNamespace,
   feedId: string,
   title: string,
+  description?: string,
 ): Promise<void> {
   try {
     const feedListKey = "feeds:list";
@@ -1946,6 +2038,7 @@ async function updateFeedInList(
     const feedIndex = feedList.feeds.findIndex((feed) => feed.id === feedId);
     if (feedIndex !== -1) {
       feedList.feeds[feedIndex].title = title;
+      feedList.feeds[feedIndex].description = description;
 
       // Store updated list
       await emailStorage.put(feedListKey, JSON.stringify(feedList));
@@ -2017,7 +2110,12 @@ app.post("/api/feeds/:feedId/update", async (c) => {
     );
 
     // Update feed in the list of all feeds
-    await updateFeedInList(emailStorage, feedId, parsedData.title);
+    await updateFeedInList(
+      emailStorage,
+      feedId,
+      parsedData.title,
+      parsedData.description,
+    );
 
     // Return success response
     return c.json({ success: true });

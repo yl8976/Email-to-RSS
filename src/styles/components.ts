@@ -591,10 +591,12 @@ export const componentStyles = `
 
   table.table.table-feeds {
     min-width: 860px;
+    table-layout: fixed;
   }
 
   table.table.table-emails {
     min-width: 760px;
+    table-layout: fixed;
   }
 
   table.table th,
@@ -603,6 +605,47 @@ export const componentStyles = `
     border-bottom: 1px solid var(--color-border);
     text-align: left;
     vertical-align: top;
+  }
+
+  /* Fixed column sizing so long spam titles don't blow up layout */
+  table.table.table-feeds th:nth-child(1),
+  table.table.table-feeds td:nth-child(1) {
+    width: 44px;
+  }
+
+  table.table.table-feeds th:nth-child(3),
+  table.table.table-feeds td:nth-child(3) {
+    width: 170px;
+  }
+
+  table.table.table-feeds th:nth-child(4),
+  table.table.table-feeds td:nth-child(4) {
+    width: 260px;
+  }
+
+  table.table.table-feeds th:nth-child(5),
+  table.table.table-feeds td:nth-child(5) {
+    width: 280px;
+  }
+
+  table.table.table-feeds th:nth-child(6),
+  table.table.table-feeds td:nth-child(6) {
+    width: 220px;
+  }
+
+  table.table.table-emails th:nth-child(1),
+  table.table.table-emails td:nth-child(1) {
+    width: 44px;
+  }
+
+  table.table.table-emails th:nth-child(3),
+  table.table.table-emails td:nth-child(3) {
+    width: 200px;
+  }
+
+  table.table.table-emails th:nth-child(4),
+  table.table.table-emails td:nth-child(4) {
+    width: 200px;
   }
 
   table.table thead th {
@@ -639,6 +682,14 @@ export const componentStyles = `
     font-size: 13px;
   }
 
+  .truncate {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
   /* Compact copy-to-clipboard for table cells */
   .copyable.copyable-inline {
     margin-bottom: 0;
@@ -650,10 +701,15 @@ export const componentStyles = `
   .copyable.copyable-inline .copyable-content {
     padding: 6px 8px;
     border-radius: var(--radius-sm);
+    width: 100%;
   }
 
   .copyable.copyable-inline .copyable-value {
     margin-right: var(--spacing-xs);
+    word-break: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .row-actions {

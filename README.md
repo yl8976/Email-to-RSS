@@ -111,6 +111,7 @@ npm run build
 1. Open `/admin`.
 2. Switch to **Table** view.
 3. Use the search box to filter obvious spam feeds.
+   - Long titles/URLs are truncated; hover to see the full value. Click to copy.
 4. Select rows and use **Delete Selected Feeds**.
 5. For legitimate feeds that got spam emails, open **Emails**, filter by subject, then **Delete Selected Emails**.
 

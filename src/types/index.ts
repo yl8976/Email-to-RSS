@@ -48,6 +48,7 @@ export interface FeedList {
 export interface FeedListItem {
   id: string;
   title: string;
+  description?: string;
 }
 
 // Declare KVNamespace for TypeScript

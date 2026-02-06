@@ -34,6 +34,7 @@ Core goals:
 Current keys used by routes:
 
 - `feeds:list` -> `{ feeds: Array<{ id, title }> }`
+- `feeds:list.feeds[].description` -> optional description (used to keep the dashboard fast; older data may omit it)
 - `feed:<feedId>:config` -> feed config object
 - `feed:<feedId>:config.allowed_senders` -> optional sender allowlist (email or domain)
 - `feed:<feedId>:metadata` -> `{ emails: Array<{ key, subject, receivedAt }> }`

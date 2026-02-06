@@ -101,7 +101,7 @@ export async function createFeed(
   }));
   
   // Add feed to the list of all feeds
-  await addFeedToList(kv, feedId, feedConfig.title);
+  await addFeedToList(kv, feedId, feedConfig.title, feedConfig.description);
 }
 
 /**
@@ -110,7 +110,8 @@ export async function createFeed(
 export async function addFeedToList(
   kv: KVNamespace,
   feedId: string,
-  title: string
+  title: string,
+  description?: string
 ): Promise<void> {
   const feedListKey = 'feeds:list';
   const existingList = await kv.get(feedListKey, { type: 'json' }) as FeedList | null;
@@ -119,7 +120,8 @@ export async function addFeedToList(
   
   feedList.feeds.push({
     id: feedId,
-    title
+    title,
+    description
   });
   
   await kv.put(feedListKey, JSON.stringify(feedList));

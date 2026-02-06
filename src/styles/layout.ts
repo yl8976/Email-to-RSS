@@ -35,6 +35,11 @@ export const layoutStyles = `
     padding: var(--spacing-xl);
     box-sizing: border-box;
   }
+
+  /* Wider layout for data-dense pages (tables) */
+  .container-wide {
+    max-width: 1280px;
+  }
   
   /* Header Styles */
   .header {

@@ -3,11 +3,8 @@
 
 export const clipboardScripts = `
   // Copy text to clipboard with animation feedback
-  function copyToClipboard(text, element) {
-    // Find the parent .copyable element and the content element
-    const copyableContainer = element.closest('.copyable');
-    const contentElement = copyableContainer?.querySelector('.copyable-content');
-    if (!copyableContainer || !contentElement) return;
+  function copyToClipboard(text, contentElement) {
+    if (!contentElement) return;
     
     navigator.clipboard.writeText(text).then(() => {
       // Add the 'copied' class to the content element for success styling
@@ -24,18 +21,23 @@ export const clipboardScripts = `
   
   // Initialize copyable elements
   function setupCopyableElements() {
-    document.querySelectorAll('.copyable').forEach(container => {
-      const contentElement = container.querySelector('.copyable-content');
-      const valueElement = container.querySelector('.copyable-value');
+    // Event delegation avoids attaching hundreds/thousands of listeners
+    // when many feeds/emails are rendered in table view.
+    document.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!target || !target.closest) return;
       
-      if (contentElement && valueElement) {
-        const textToCopy = valueElement.getAttribute('data-copy') || valueElement.textContent.trim();
-        
-        // Add click handler to the entire content area
-        contentElement.addEventListener('click', () => {
-          copyToClipboard(textToCopy, contentElement);
-        });
-      }
+      const contentElement = target.closest('.copyable-content');
+      if (!contentElement) return;
+      
+      const container = contentElement.closest('.copyable');
+      const valueElement = container?.querySelector('.copyable-value');
+      if (!valueElement) return;
+      
+      const textToCopy = valueElement.getAttribute('data-copy') || (valueElement.textContent || '').trim();
+      if (!textToCopy) return;
+      
+      copyToClipboard(textToCopy, contentElement);
     });
   }
   
