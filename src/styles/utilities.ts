@@ -11,6 +11,21 @@ export const utilityStyles = `
   .fade-in {
     animation: fadeIn 0.5s ease-out;
   }
+
+  .muted {
+    color: var(--color-text-secondary);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in {
+      animation: none;
+    }
+
+    * {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
   
   /* Copyable content styling */
   .copyable {

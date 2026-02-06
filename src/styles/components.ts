@@ -413,7 +413,7 @@ export const componentStyles = `
   
   .email-raw pre {
     margin: 0;
-    font-family: 'Menlo', monospace;
+    font-family: var(--font-family-mono);
     font-size: 14px;
     white-space: pre-wrap;
     word-break: break-word;
@@ -481,6 +481,185 @@ export const componentStyles = `
     margin-top: var(--spacing-md);
     border-radius: var(--radius-md);
     overflow: hidden;
+  }
+
+  /* Toolbar + segmented control (Apple-ish) */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+    margin-bottom: var(--spacing-md);
+  }
+
+  .toolbar-group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+
+  .toolbar-group-fill {
+    width: 100%;
+  }
+
+  input.search {
+    min-width: 280px;
+    flex: 1;
+  }
+
+  .actions-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--spacing-md);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-border);
+    background-color: rgba(60, 60, 67, 0.12);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    backdrop-filter: blur(var(--blur-sm));
+    -webkit-backdrop-filter: blur(var(--blur-sm));
+  }
+
+  .segmented {
+    display: inline-flex;
+    border-radius: var(--radius-pill);
+    padding: 2px;
+    border: 1px solid var(--color-border);
+    background-color: rgba(60, 60, 67, 0.12);
+    backdrop-filter: blur(var(--blur-sm));
+    -webkit-backdrop-filter: blur(var(--blur-sm));
+    box-shadow: var(--shadow-sm);
+  }
+
+  .segmented-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 12px;
+    border-radius: var(--radius-pill);
+    text-decoration: none;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    user-select: none;
+    transition: all var(--transition-fast);
+  }
+
+  .segmented-item:hover {
+    color: var(--color-text-primary);
+  }
+
+  .segmented-item.is-active {
+    color: var(--color-text-primary);
+    background-color: rgba(255, 255, 255, 0.12);
+    box-shadow: var(--shadow-sm);
+  }
+
+  @media (prefers-color-scheme: light) {
+    .segmented-item.is-active {
+      background-color: rgba(255, 255, 255, 0.85);
+    }
+  }
+
+  /* Tables */
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    background-color: rgba(60, 60, 67, 0.05);
+  }
+
+  @media (prefers-color-scheme: light) {
+    .table-wrap {
+      background-color: rgba(255, 255, 255, 0.6);
+    }
+  }
+
+  table.table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  table.table.table-feeds {
+    min-width: 860px;
+  }
+
+  table.table.table-emails {
+    min-width: 760px;
+  }
+
+  table.table th,
+  table.table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  table.table thead th {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+    background-color: rgba(44, 44, 46, 0.35);
+    backdrop-filter: blur(var(--blur-sm));
+    -webkit-backdrop-filter: blur(var(--blur-sm));
+  }
+
+  @media (prefers-color-scheme: light) {
+    table.table thead th {
+      background-color: rgba(255, 255, 255, 0.55);
+    }
+  }
+
+  table.table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+
+  @media (prefers-color-scheme: light) {
+    table.table tbody tr:hover {
+      background-color: rgba(0, 0, 0, 0.03);
+    }
+  }
+
+  table.table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  table.table code {
+    font-family: var(--font-family-mono);
+    font-size: 13px;
+  }
+
+  /* Compact copy-to-clipboard for table cells */
+  .copyable.copyable-inline {
+    margin-bottom: 0;
+    padding: 0;
+    background-color: transparent;
+    border: none;
+  }
+
+  .copyable.copyable-inline .copyable-content {
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+  }
+
+  .copyable.copyable-inline .copyable-value {
+    margin-right: var(--spacing-xs);
+  }
+
+  .row-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
   }
   
   /* Feed and Email Lists */

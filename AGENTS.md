@@ -35,6 +35,7 @@ Current keys used by routes:
 
 - `feeds:list` -> `{ feeds: Array<{ id, title }> }`
 - `feed:<feedId>:config` -> feed config object
+- `feed:<feedId>:config.allowed_senders` -> optional sender allowlist (email or domain)
 - `feed:<feedId>:metadata` -> `{ emails: Array<{ key, subject, receivedAt }> }`
 - `feed:<feedId>:<timestamp>` -> stored email body/metadata
 
@@ -68,8 +69,16 @@ Notes:
 ## Security assumptions
 
 - Inbound endpoint only accepts requests from ForwardEmail source IPs.
-- Admin access uses cookie gate and password stored in Worker secret (`ADMIN_PASSWORD`).
+- Admin access uses a signed cookie gate and password stored in Worker secret (`ADMIN_PASSWORD`).
+- Admin pages set `Cache-Control: no-store`.
+- Prefer setting `allowed_senders` on legitimate feeds to reduce inbound spam.
 - Do not hardcode credentials or domain-specific secrets into tracked files.
+
+## Spam cleanup workflow
+
+- First choice: use dashboard bulk actions (`/admin`) with search + checkbox selection.
+- Use **Table** view for bulk delete.
+- Avoid wildcard deletion; prefer search + small batches to reduce risk of deleting legitimate feeds.
 
 ## Cloudflare/Wrangler conventions
 

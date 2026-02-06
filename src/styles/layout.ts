@@ -15,18 +15,22 @@ export const layoutStyles = `
     overflow-x: hidden;
     margin: 0;
     padding: 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
     
-    /* Add subtle gradient background */
-    background-image: linear-gradient(135deg, 
-      rgba(0, 0, 0, 0.02) 0%, 
-      rgba(255, 255, 255, 0.02) 100%);
+    /* Liquid-glass-ish background (subtle, non-distracting) */
+    background-image:
+      radial-gradient(1200px circle at 20% 10%, rgba(10, 132, 255, 0.18), transparent 55%),
+      radial-gradient(900px circle at 80% 20%, rgba(94, 92, 230, 0.14), transparent 60%),
+      radial-gradient(700px circle at 50% 100%, rgba(48, 209, 88, 0.10), transparent 60%),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(0, 0, 0, 0.03) 100%);
     background-attachment: fixed;
   }
   
   /* Main Container */
   .container {
     width: 100%;
-    max-width: 800px;
+    max-width: 980px;
     margin: 0 auto;
     padding: var(--spacing-xl);
     box-sizing: border-box;

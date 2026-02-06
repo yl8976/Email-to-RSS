@@ -3,8 +3,10 @@
 
 export const variables = `
   :root {
-    /* Typography - Using Inter font */
-    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    /* Typography - Prefer system UI fonts (Apple HIG-ish) */
+    --font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color-scheme: light dark;
     --font-size-xs: 12px;
     --font-size-sm: 14px;
     --font-size-md: 16px;
@@ -103,6 +105,5 @@ export const lightModeTheme = `
 
 // Inter font import
 export const fontImport = `
-  /* Inter Font Import */
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-`; 
+  /* No external font imports. */
+`;

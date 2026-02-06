@@ -13,8 +13,10 @@ Email-to-RSS keeps the same workflow while avoiding shared domains and shared da
 ## Features
 
 - One-click feed creation from an admin dashboard
+- Bulk feed/email deletion from the admin dashboard (safe checkbox-based flow)
 - Unique newsletter addresses per feed (for example `apple.mountain.42@yourdomain.com`)
 - ForwardEmail webhook ingestion with source-IP verification
+- Optional per-feed sender allowlist (`email@domain.com` or `domain.com`)
 - RSS generation on demand (`/rss/:feedId`)
 - Cloudflare KV storage for feed config + email metadata/content
 - Password-protected admin UI
@@ -97,8 +99,20 @@ npm run build
 ## Security notes
 
 - Inbound webhook access is IP-restricted to ForwardEmail MX sources.
-- Admin auth is cookie-based (`HttpOnly`, `SameSite=Strict`).
+- Admin auth uses a signed, `HttpOnly`, `Secure`, `SameSite=Strict` cookie.
+- Admin responses are `no-store` to avoid cache leakage.
+- For high-value feeds, set `Allowed senders` so only known sender addresses/domains are accepted.
 - You should use a strong admin password and rotate periodically.
+
+## Spam cleanup runbook
+
+### UI-first cleanup
+
+1. Open `/admin`.
+2. Switch to **Table** view.
+3. Use the search box to filter obvious spam feeds.
+4. Select rows and use **Delete Selected Feeds**.
+5. For legitimate feeds that got spam emails, open **Emails**, filter by subject, then **Delete Selected Emails**.
 
 ## Upgrading dependencies
 

@@ -8,12 +8,25 @@ describe("Admin Routes", () => {
   let testApp: Hono;
   let mockEnv: Env;
   let request: (path: string, init?: RequestInit) => Promise<Response>;
+  let loginAndGetCookie: () => Promise<string>;
 
   beforeEach(() => {
     mockEnv = createMockEnv();
     testApp = new Hono();
     testApp.route("/admin", app);
     request = (path, init = {}) => testApp.request(path, init, mockEnv);
+    loginAndGetCookie = async () => {
+      const formData = new FormData();
+      formData.append("password", "test-password");
+      const response = await request("/admin/login", {
+        method: "POST",
+        body: formData,
+      });
+      expect(response.status).toBe(302);
+      const setCookie = response.headers.get("Set-Cookie");
+      expect(setCookie).toBeTruthy();
+      return (setCookie as string).split(";")[0];
+    };
   });
 
   describe("Authentication", () => {
@@ -38,11 +51,13 @@ describe("Admin Routes", () => {
         body: formData,
       });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/admin");
       const cookie = res.headers.get("Set-Cookie");
-      expect(cookie).toContain("admin_auth=true");
+      expect(cookie).toContain("admin_auth=");
       expect(cookie).toContain("HttpOnly");
       expect(cookie).toContain("SameSite=Strict");
+      expect(cookie).toContain("Secure");
       expect(cookie).toContain("Path=/");
     });
 
@@ -73,9 +88,8 @@ describe("Admin Routes", () => {
   });
 
   describe("Protected Routes", () => {
-    const authCookie = "admin_auth=true";
-
     it("should allow access to dashboard with valid auth cookie", async () => {
+      const authCookie = await loginAndGetCookie();
       const res = await request("/admin", {
         headers: {
           Cookie: authCookie,
@@ -83,6 +97,16 @@ describe("Admin Routes", () => {
       });
       expect(res.status).toBe(200);
       expect(res.headers.get("Content-Type")).toContain("text/html");
+    });
+
+    it("should reject access with forged auth cookie", async () => {
+      const res = await request("/admin", {
+        headers: {
+          Cookie: "admin_auth=true",
+        },
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/admin/login");
     });
 
     describe("Feed Creation", () => {
@@ -105,6 +129,7 @@ describe("Admin Routes", () => {
       });
 
       it("should allow feed creation with valid authentication", async () => {
+        const authCookie = await loginAndGetCookie();
         const formData = new FormData();
         formData.append("title", "Test Feed");
         formData.append("description", "Test Description");
@@ -118,7 +143,7 @@ describe("Admin Routes", () => {
         });
 
         expect(res.status).toBe(302); // Redirects back to dashboard
-        expect(res.headers.get("Location")).toBe("/admin");
+        expect(res.headers.get("Location")).toBe("/admin?view=list");
 
         // Verify feed was created in KV
         const feedList = (await mockEnv.EMAIL_STORAGE.get(
@@ -141,6 +166,7 @@ describe("Admin Routes", () => {
       });
 
       it("should reject feed creation with missing title", async () => {
+        const authCookie = await loginAndGetCookie();
         const formData = new FormData();
         formData.append("description", "Test Description");
 
@@ -187,6 +213,7 @@ describe("Admin Routes", () => {
       });
 
       it("should allow feed deletion with valid authentication", async () => {
+        const authCookie = await loginAndGetCookie();
         // First create a feed
         const formData = new FormData();
         formData.append("title", "Test Feed");
@@ -218,7 +245,7 @@ describe("Admin Routes", () => {
         });
 
         expect(deleteRes.status).toBe(302);
-        expect(deleteRes.headers.get("Location")).toBe("/admin");
+        expect(deleteRes.headers.get("Location")).toBe("/admin?view=list");
 
         // Verify feed was deleted
         const updatedFeedList = (await mockEnv.EMAIL_STORAGE.get(
@@ -234,6 +261,53 @@ describe("Admin Routes", () => {
           "json",
         );
         expect(feedConfig).toBeNull();
+      });
+
+      it("should allow bulk feed deletion with valid authentication", async () => {
+        const authCookie = await loginAndGetCookie();
+
+        for (const title of ["Feed A", "Feed B"]) {
+          const formData = new FormData();
+          formData.append("title", title);
+          formData.append("description", "Test");
+          const createRes = await request("/admin/feeds/create", {
+            method: "POST",
+            headers: { Cookie: authCookie },
+            body: formData,
+          });
+          expect(createRes.status).toBe(302);
+        }
+
+        const feedListBefore = (await mockEnv.EMAIL_STORAGE.get(
+          "feeds:list",
+          "json",
+        )) as {
+          feeds: Array<{ id: string; title: string }>;
+        } | null;
+        expect(feedListBefore?.feeds.length).toBe(2);
+
+        const bulkForm = new FormData();
+        for (const feed of feedListBefore?.feeds || []) {
+          bulkForm.append("feedIds", feed.id);
+        }
+
+        const bulkDeleteRes = await request("/admin/feeds/bulk-delete", {
+          method: "POST",
+          headers: { Cookie: authCookie },
+          body: bulkForm,
+        });
+
+        expect(bulkDeleteRes.status).toBe(302);
+        expect(bulkDeleteRes.headers.get("Location")).toContain("/admin?view=list");
+        expect(bulkDeleteRes.headers.get("Location")).toContain("message=bulkDeleted");
+
+        const feedListAfter = (await mockEnv.EMAIL_STORAGE.get(
+          "feeds:list",
+          "json",
+        )) as {
+          feeds: Array<{ id: string; title: string }>;
+        } | null;
+        expect(feedListAfter?.feeds.length).toBe(0);
       });
     });
   });
