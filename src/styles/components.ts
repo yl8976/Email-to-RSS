@@ -834,6 +834,49 @@ export const componentStyles = `
     flex-wrap: wrap;
   }
 
+  .button-delete {
+    transition:
+      background-color 180ms ease,
+      border-color 180ms ease,
+      color 180ms ease,
+      transform 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .button-delete.is-confirming {
+    background-color: rgba(255, 69, 58, 0.22);
+    border-color: rgba(255, 69, 58, 0.65);
+    color: #fff;
+    box-shadow: 0 12px 28px rgba(255, 69, 58, 0.18);
+    transform: translateY(-1px);
+  }
+
+  @media (prefers-color-scheme: light) {
+    .button-delete.is-confirming {
+      background-color: rgba(255, 69, 58, 0.12);
+      color: var(--color-text-primary);
+    }
+  }
+
+  .feed-row.is-removing,
+  .email-row.is-removing {
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+
+  .feed-item.is-removing {
+    opacity: 0;
+    transform: translateY(-6px);
+    overflow: hidden;
+    transition:
+      opacity 220ms ease,
+      transform 220ms ease,
+      max-height 220ms ease,
+      margin 220ms ease,
+      padding 220ms ease;
+  }
+
   /* Spinner (buttons + toasts) */
   @keyframes spin {
     to {

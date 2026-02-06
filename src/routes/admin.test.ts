@@ -263,6 +263,42 @@ describe("Admin Routes", () => {
         expect(feedConfig).toBeNull();
       });
 
+      it("should return JSON for feed deletion when requested", async () => {
+        const authCookie = await loginAndGetCookie();
+        const formData = new FormData();
+        formData.append("title", "JSON Feed");
+        formData.append("description", "Test Description");
+
+        const createRes = await request("/admin/feeds/create", {
+          method: "POST",
+          headers: {
+            Cookie: authCookie,
+          },
+          body: formData,
+        });
+
+        expect(createRes.status).toBe(302);
+
+        const feedList = (await mockEnv.EMAIL_STORAGE.get(
+          "feeds:list",
+          "json",
+        )) as { feeds: Array<{ id: string; title: string }> } | null;
+        const feedId = feedList?.feeds[0].id as string;
+
+        const deleteRes = await request(`/admin/feeds/${feedId}/delete?view=list`, {
+          method: "POST",
+          headers: {
+            Cookie: authCookie,
+            Accept: "application/json",
+          },
+        });
+
+        expect(deleteRes.status).toBe(200);
+        const payload = await deleteRes.json();
+        expect(payload.ok).toBe(true);
+        expect(payload.feedId).toBe(feedId);
+      });
+
       it("should allow bulk feed deletion with valid authentication", async () => {
         const authCookie = await loginAndGetCookie();
 
@@ -308,6 +344,81 @@ describe("Admin Routes", () => {
           feeds: Array<{ id: string; title: string }>;
         } | null;
         expect(feedListAfter?.feeds.length).toBe(0);
+      });
+    });
+
+    describe("Email Management", () => {
+      it("should return JSON for email deletion when requested", async () => {
+        const authCookie = await loginAndGetCookie();
+        const formData = new FormData();
+        formData.append("title", "Email Feed");
+        formData.append("description", "Test Description");
+
+        const createRes = await request("/admin/feeds/create", {
+          method: "POST",
+          headers: {
+            Cookie: authCookie,
+          },
+          body: formData,
+        });
+
+        expect(createRes.status).toBe(302);
+
+        const feedList = (await mockEnv.EMAIL_STORAGE.get(
+          "feeds:list",
+          "json",
+        )) as { feeds: Array<{ id: string; title: string }> } | null;
+        const feedId = feedList?.feeds[0].id as string;
+        const emailKey = `feed:${feedId}:emails:123456`;
+
+        await mockEnv.EMAIL_STORAGE.put(
+          emailKey,
+          JSON.stringify({
+            subject: "Hello",
+            from: "sender@example.com",
+            content: "<p>Hi</p>",
+            receivedAt: 123456,
+            headers: {},
+          }),
+        );
+
+        const feedMetadataKey = `feed:${feedId}:metadata`;
+        const feedMetadata = (await mockEnv.EMAIL_STORAGE.get(
+          feedMetadataKey,
+          "json",
+        )) as { emails: Array<{ key: string; subject: string; receivedAt: number }> } | null;
+        const updatedMetadata = {
+          emails: [
+            ...(feedMetadata?.emails || []),
+            { key: emailKey, subject: "Hello", receivedAt: 123456 },
+          ],
+        };
+        await mockEnv.EMAIL_STORAGE.put(
+          feedMetadataKey,
+          JSON.stringify(updatedMetadata),
+        );
+
+        const deleteRes = await request(`/admin/emails/${emailKey}/delete?feedId=${feedId}`, {
+          method: "POST",
+          headers: {
+            Cookie: authCookie,
+            Accept: "application/json",
+          },
+        });
+
+        expect(deleteRes.status).toBe(200);
+        const payload = await deleteRes.json();
+        expect(payload.ok).toBe(true);
+        expect(payload.emailKey).toBe(emailKey);
+
+        const deletedEmail = await mockEnv.EMAIL_STORAGE.get(emailKey, "json");
+        expect(deletedEmail).toBeNull();
+
+        const metadataAfter = (await mockEnv.EMAIL_STORAGE.get(
+          feedMetadataKey,
+          "json",
+        )) as { emails: Array<{ key: string; subject: string; receivedAt: number }> } | null;
+        expect(metadataAfter?.emails.length).toBe(0);
       });
     });
   });

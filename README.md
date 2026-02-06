@@ -14,6 +14,7 @@ Email-to-RSS keeps the same workflow while avoiding shared domains and shared da
 
 - One-click feed creation from an admin dashboard
 - Bulk feed/email deletion from the admin dashboard (safe checkbox-based flow)
+- Inline double-confirm delete interactions with toast feedback in the admin dashboard
 - Resizable + sortable table columns in the admin dashboard (Table view)
 - Unique newsletter addresses per feed (for example `apple.mountain.42@yourdomain.com`)
 - ForwardEmail webhook ingestion with source-IP verification

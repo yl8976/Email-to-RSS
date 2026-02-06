@@ -25,11 +25,12 @@ export const toastScripts = `
       const body = document.createElement('div');
       body.className = 'toast-body';
 
+      let spinner = null;
       if (loading) {
-        const spin = document.createElement('span');
-        spin.className = 'spinner';
-        spin.setAttribute('aria-hidden', 'true');
-        body.appendChild(spin);
+        spinner = document.createElement('span');
+        spinner.className = 'spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        body.appendChild(spinner);
       }
 
       const text = document.createElement('div');
@@ -46,7 +47,7 @@ export const toastScripts = `
       toast.appendChild(body);
       toast.appendChild(close);
 
-      return { toast, text, close };
+      return { toast, text, close, spinner, body };
     }
 
     function showToast(message, opts) {
@@ -54,14 +55,16 @@ export const toastScripts = `
       const duration = Number.isFinite(options.duration) ? Number(options.duration) : 4500;
 
       const stack = ensureToastStack();
-      const { toast, text, close } = createToastEl(message, options);
+      const { toast, text, close, body } = createToastEl(message, options);
 
       let dismissed = false;
       let timeoutId = 0;
+      let currentDuration = duration;
 
       function dismiss() {
         if (dismissed) return;
         dismissed = true;
+        if (timeoutId) window.clearTimeout(timeoutId);
         toast.classList.remove('visible');
         // Match CSS transition duration to avoid abrupt removal
         setTimeout(() => {
@@ -69,11 +72,33 @@ export const toastScripts = `
         }, 220);
       }
 
+      function scheduleDismiss(nextDuration) {
+        if (timeoutId) window.clearTimeout(timeoutId);
+        if (nextDuration !== 0) {
+          timeoutId = window.setTimeout(dismiss, nextDuration);
+        }
+      }
+
       function update(nextMessage, nextOpts) {
         if (dismissed) return;
         text.textContent = String(nextMessage || '');
         if (nextOpts && typeof nextOpts.type === 'string') {
           toast.className = 'toast toast-' + nextOpts.type;
+        }
+        if (nextOpts && typeof nextOpts.loading === 'boolean') {
+          const existing = body.querySelector('.spinner');
+          if (nextOpts.loading && !existing) {
+            const spin = document.createElement('span');
+            spin.className = 'spinner';
+            spin.setAttribute('aria-hidden', 'true');
+            body.insertBefore(spin, body.firstChild);
+          } else if (!nextOpts.loading && existing) {
+            existing.remove();
+          }
+        }
+        if (nextOpts && Object.prototype.hasOwnProperty.call(nextOpts, 'duration')) {
+          currentDuration = Number.isFinite(nextOpts.duration) ? Number(nextOpts.duration) : currentDuration;
+          scheduleDismiss(currentDuration);
         }
       }
 
@@ -88,9 +113,7 @@ export const toastScripts = `
       requestAnimationFrame(() => toast.classList.add('visible'));
 
       // duration: 0 means "persistent"
-      if (duration !== 0) {
-        timeoutId = window.setTimeout(dismiss, duration);
-      }
+      scheduleDismiss(currentDuration);
 
       return { dismiss, update };
     }

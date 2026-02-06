@@ -476,14 +476,15 @@ app.get("/", async (c) => {
                                 `${clampText(feed.title, 320)} ${feed.id} ${clampText(feed.description || "", 320)}`.toLowerCase();
 
                               return html`
-                                <tr
-                                  class="feed-row"
-                                  data-search="${searchHaystack}"
-                                  data-sort-title="${sortTitle}"
-                                  data-sort-feed-id="${sortFeedId}"
-                                  data-sort-email="${sortEmail}"
-                                  data-sort-rss="${sortRss}"
-                                >
+                            <tr
+                              class="feed-row"
+                              data-feed-id="${feed.id}"
+                              data-search="${searchHaystack}"
+                              data-sort-title="${sortTitle}"
+                              data-sort-feed-id="${sortFeedId}"
+                              data-sort-email="${sortEmail}"
+                              data-sort-rss="${sortRss}"
+                            >
                                   <td>
                                     <input
                                       type="checkbox"
@@ -626,8 +627,10 @@ app.get("/", async (c) => {
                                       >
                                       <button
                                         type="button"
-                                        class="button button-small button-danger"
-                                        onclick="confirmDelete('${feed.id}')"
+                                        class="button button-small button-danger button-delete"
+                                        data-delete-kind="feed"
+                                        data-feed-id="${feed.id}"
+                                        data-view="table"
                                       >
                                         Delete
                                       </button>
@@ -672,6 +675,7 @@ app.get("/", async (c) => {
                       return html`
                         <li
                           class="feed-item card feed-row"
+                          data-feed-id="${feed.id}"
                           data-search="${searchHaystack}"
                         >
                           <div class="feed-header">
@@ -802,8 +806,10 @@ app.get("/", async (c) => {
                             <div class="feed-buttons-right">
                               <button
                                 type="button"
-                                onclick="confirmDelete('${feed.id}')"
-                                class="button button-small button-danger"
+                                class="button button-small button-danger button-delete"
+                                data-delete-kind="feed"
+                                data-feed-id="${feed.id}"
+                                data-view="list"
                               >
                                 Delete
                               </button>
@@ -841,6 +847,7 @@ app.get("/", async (c) => {
 	          FEED_SELECT_ALL_EL = document.getElementById('select-all-feeds');
 	          setupFeedTableResizing();
 	          setupFeedTableSorting();
+	          setupFeedDeleteButtons();
           updateFeedMatchCount();
           updateFeedSelectionState();
         }
@@ -1029,15 +1036,163 @@ app.get("/", async (c) => {
           });
         }
 
-        function confirmDelete(feedId) {
-          if (confirm('Are you sure you want to delete this feed? This action cannot be undone.')) {
-            const currentView = new URL(window.location.href).searchParams.get('view') || 'list';
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/admin/feeds/' + feedId + '/delete?view=' + encodeURIComponent(currentView);
-            document.body.appendChild(form);
-            form.submit();
+        const DELETE_CONFIRM_LABEL = 'Confirm delete';
+        const DELETE_LOADING_LABEL = 'Deleting...';
+        const DELETE_CONFIRM_TIMEOUT_MS = 4000;
+
+        function getDeleteView() {
+          return new URL(window.location.href).searchParams.get('view') || 'list';
+        }
+
+        function resetDeleteButton(buttonEl) {
+          if (!buttonEl) return;
+          buttonEl.classList.remove('is-confirming');
+          buttonEl.removeAttribute('data-confirming');
+          buttonEl.disabled = false;
+          const original = buttonEl.dataset.originalLabel || (buttonEl.textContent || '').trim() || 'Delete';
+          buttonEl.innerHTML = original;
+        }
+
+        function animateRowRemoval(row, onDone) {
+          if (!row) {
+            if (onDone) onDone();
+            return;
           }
+
+          const isListItem = row.tagName.toLowerCase() === 'li';
+          if (isListItem) {
+            row.style.maxHeight = row.getBoundingClientRect().height + 'px';
+            row.style.overflow = 'hidden';
+          }
+
+          row.classList.add('is-removing');
+
+          requestAnimationFrame(() => {
+            if (isListItem) {
+              row.style.maxHeight = '0px';
+              row.style.marginTop = '0px';
+              row.style.marginBottom = '0px';
+              row.style.paddingTop = '0px';
+              row.style.paddingBottom = '0px';
+            }
+          });
+
+          window.setTimeout(() => {
+            row.remove();
+            if (onDone) onDone();
+          }, 240);
+        }
+
+        async function deleteFeedRequest(feedId, view) {
+          const res = await fetch('/admin/feeds/' + encodeURIComponent(feedId) + '/delete?view=' + encodeURIComponent(view), {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+            },
+            credentials: 'same-origin',
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const message = data && data.error ? String(data.error) : ('Request failed (' + res.status + ')');
+            throw new Error(message);
+          }
+          return data;
+        }
+
+        function refreshFeedRowCache() {
+          FEED_ROWS = Array.from(document.querySelectorAll('.feed-row'));
+          FEED_CHECKBOXES = Array.from(document.querySelectorAll('.feed-select'));
+          if (FEED_TOTAL_COUNT_EL) {
+            FEED_TOTAL_COUNT_EL.textContent = String(FEED_ROWS.length);
+          }
+          updateFeedMatchCount();
+          updateFeedSelectionState();
+        }
+
+        function setupFeedDeleteButtons() {
+          const buttons = Array.from(document.querySelectorAll('button[data-delete-kind="feed"]'));
+          buttons.forEach((button) => {
+            if (button.dataset.deleteReady === 'true') return;
+            button.dataset.deleteReady = 'true';
+            const original = (button.textContent || '').trim() || 'Delete';
+            button.dataset.originalLabel = original;
+
+            let confirming = false;
+            let confirmTimer = 0;
+            let inFlight = false;
+
+            const startConfirm = () => {
+              confirming = true;
+              button.classList.add('is-confirming');
+              button.setAttribute('data-confirming', 'true');
+              button.innerHTML = DELETE_CONFIRM_LABEL;
+              if (confirmTimer) window.clearTimeout(confirmTimer);
+              confirmTimer = window.setTimeout(() => {
+                confirming = false;
+                resetDeleteButton(button);
+              }, DELETE_CONFIRM_TIMEOUT_MS);
+            };
+
+            button.addEventListener('click', async (event) => {
+              event.preventDefault();
+              if (inFlight) return;
+
+              if (!confirming) {
+                startConfirm();
+                return;
+              }
+
+              if (confirmTimer) window.clearTimeout(confirmTimer);
+              inFlight = true;
+              setButtonLoading(button, true, DELETE_LOADING_LABEL);
+
+              const toast = window.showToast
+                ? window.showToast('Deleting feed...', { type: 'info', loading: true, duration: 0 })
+                : null;
+
+              const feedId = button.getAttribute('data-feed-id') || '';
+              const view = button.getAttribute('data-view') || getDeleteView();
+              const row = button.closest('.feed-row');
+
+              try {
+                await deleteFeedRequest(feedId, view);
+
+                if (toast && toast.update) {
+                  toast.update('Feed deleted.', { type: 'success', loading: false, duration: 3200 });
+                } else if (window.showToast) {
+                  window.showToast('Feed deleted.', { type: 'success' });
+                }
+
+                animateRowRemoval(row, () => {
+                  refreshFeedRowCache();
+                });
+              } catch (error) {
+                if (toast && toast.update) {
+                  toast.update('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', loading: false, duration: 6500 });
+                } else if (window.showToast) {
+                  window.showToast('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 6500 });
+                }
+                setButtonLoading(button, false);
+                confirming = false;
+                resetDeleteButton(button);
+              } finally {
+                inFlight = false;
+                if (!row) {
+                  setButtonLoading(button, false);
+                  confirming = false;
+                  resetDeleteButton(button);
+                }
+              }
+            });
+
+            button.addEventListener('keydown', (event) => {
+              if (event.key === 'Escape' && confirming && !inFlight) {
+                confirming = false;
+                if (confirmTimer) window.clearTimeout(confirmTimer);
+                resetDeleteButton(button);
+              }
+            });
+          });
         }
 
         function updateFeedSelectionState() {
@@ -1541,6 +1696,7 @@ app.post("/feeds/:feedId/delete", async (c) => {
   const emailStorage = env.EMAIL_STORAGE;
   const feedId = c.req.param("feedId");
   const view = c.req.query("view") === "table" ? "table" : "list";
+  const wantsJson = (c.req.header("Accept") || "").includes("application/json");
 
   try {
     await deleteFeedFast(emailStorage, feedId);
@@ -1549,9 +1705,15 @@ app.post("/feeds/:feedId/delete", async (c) => {
     // Best-effort cleanup in the background so the request stays fast.
     // Use the UI purge endpoint for full, user-visible progress.
     waitUntilSafe(c, purgeFeedKeysStep(emailStorage, feedId));
+    if (wantsJson) {
+      return c.json({ ok: true, feedId });
+    }
     return c.redirect(`/admin?view=${view}`);
   } catch (error) {
     console.error("Error deleting feed:", error);
+    if (wantsJson) {
+      return c.json({ ok: false, error: "Error deleting feed. Please try again." }, 400);
+    }
     return c.text("Error deleting feed. Please try again.", 400);
   }
 });
@@ -1957,6 +2119,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
                           return html`
                             <tr
                               class="email-row"
+                              data-email-key="${email.key}"
                               data-search="${searchHaystack}"
                               data-sort-subject="${sortSubject}"
                               data-sort-received-at="${sortReceivedAt}"
@@ -1987,8 +2150,10 @@ app.get("/feeds/:feedId/emails", async (c) => {
                                   >
                                   <button
                                     type="button"
-                                    onclick="confirmDeleteEmail('${email.key}', '${feedId}')"
-                                    class="button button-small button-danger"
+                                    class="button button-small button-danger button-delete"
+                                    data-delete-kind="email"
+                                    data-email-key="${email.key}"
+                                    data-feed-id="${feedId}"
                                   >
                                     Delete
                                   </button>
@@ -2036,6 +2201,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
 	          EMAIL_SELECT_ALL_EL = document.getElementById('select-all-emails');
 	          setupEmailTableResizing();
 	          setupEmailTableSorting();
+	          setupEmailDeleteButtons();
 	          updateEmailMatchCount();
 	          updateEmailSelectionState();
 	        }
@@ -2220,14 +2386,143 @@ app.get("/feeds/:feedId/emails", async (c) => {
           });
         }
 
-        function confirmDeleteEmail(emailKey, feedId) {
-          if (confirm('Are you sure you want to delete this email? This action cannot be undone.')) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/admin/emails/' + emailKey + '/delete?feedId=' + feedId;
-            document.body.appendChild(form);
-            form.submit();
+        const EMAIL_DELETE_CONFIRM_LABEL = 'Confirm delete';
+        const EMAIL_DELETE_LOADING_LABEL = 'Deleting...';
+        const EMAIL_DELETE_CONFIRM_TIMEOUT_MS = 4000;
+
+        function resetEmailDeleteButton(buttonEl) {
+          if (!buttonEl) return;
+          buttonEl.classList.remove('is-confirming');
+          buttonEl.removeAttribute('data-confirming');
+          buttonEl.disabled = false;
+          const original = buttonEl.dataset.originalLabel || (buttonEl.textContent || '').trim() || 'Delete';
+          buttonEl.innerHTML = original;
+        }
+
+        function animateEmailRowRemoval(row, onDone) {
+          if (!row) {
+            if (onDone) onDone();
+            return;
           }
+
+          row.classList.add('is-removing');
+
+          window.setTimeout(() => {
+            row.remove();
+            if (onDone) onDone();
+          }, 240);
+        }
+
+        async function deleteEmailRequest(emailKey, feedId) {
+          const res = await fetch('/admin/emails/' + encodeURIComponent(emailKey) + '/delete?feedId=' + encodeURIComponent(feedId), {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+            },
+            credentials: 'same-origin',
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const message = data && data.error ? String(data.error) : ('Request failed (' + res.status + ')');
+            throw new Error(message);
+          }
+          return data;
+        }
+
+        function refreshEmailRowCache() {
+          EMAIL_ROWS = Array.from(document.querySelectorAll('.email-row'));
+          EMAIL_CHECKBOXES = Array.from(document.querySelectorAll('.email-select'));
+          if (EMAIL_TOTAL_COUNT_EL) {
+            EMAIL_TOTAL_COUNT_EL.textContent = String(EMAIL_ROWS.length);
+          }
+          updateEmailMatchCount();
+          updateEmailSelectionState();
+        }
+
+        function setupEmailDeleteButtons() {
+          const buttons = Array.from(document.querySelectorAll('button[data-delete-kind="email"]'));
+          buttons.forEach((button) => {
+            if (button.dataset.deleteReady === 'true') return;
+            button.dataset.deleteReady = 'true';
+            const original = (button.textContent || '').trim() || 'Delete';
+            button.dataset.originalLabel = original;
+
+            let confirming = false;
+            let confirmTimer = 0;
+            let inFlight = false;
+
+            const startConfirm = () => {
+              confirming = true;
+              button.classList.add('is-confirming');
+              button.setAttribute('data-confirming', 'true');
+              button.innerHTML = EMAIL_DELETE_CONFIRM_LABEL;
+              if (confirmTimer) window.clearTimeout(confirmTimer);
+              confirmTimer = window.setTimeout(() => {
+                confirming = false;
+                resetEmailDeleteButton(button);
+              }, EMAIL_DELETE_CONFIRM_TIMEOUT_MS);
+            };
+
+            button.addEventListener('click', async (event) => {
+              event.preventDefault();
+              if (inFlight) return;
+
+              if (!confirming) {
+                startConfirm();
+                return;
+              }
+
+              if (confirmTimer) window.clearTimeout(confirmTimer);
+              inFlight = true;
+              setButtonLoading(button, true, EMAIL_DELETE_LOADING_LABEL);
+
+              const toast = window.showToast
+                ? window.showToast('Deleting email...', { type: 'info', loading: true, duration: 0 })
+                : null;
+
+              const emailKey = button.getAttribute('data-email-key') || '';
+              const feedId = button.getAttribute('data-feed-id') || EMAIL_FEED_ID;
+              const row = button.closest('.email-row');
+
+              try {
+                await deleteEmailRequest(emailKey, feedId);
+
+                if (toast && toast.update) {
+                  toast.update('Email deleted.', { type: 'success', loading: false, duration: 3200 });
+                } else if (window.showToast) {
+                  window.showToast('Email deleted.', { type: 'success' });
+                }
+
+                animateEmailRowRemoval(row, () => {
+                  refreshEmailRowCache();
+                });
+              } catch (error) {
+                if (toast && toast.update) {
+                  toast.update('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', loading: false, duration: 6500 });
+                } else if (window.showToast) {
+                  window.showToast('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 6500 });
+                }
+                setButtonLoading(button, false);
+                confirming = false;
+                resetEmailDeleteButton(button);
+              } finally {
+                inFlight = false;
+                if (!row) {
+                  setButtonLoading(button, false);
+                  confirming = false;
+                  resetEmailDeleteButton(button);
+                }
+              }
+            });
+
+            button.addEventListener('keydown', (event) => {
+              if (event.key === 'Escape' && confirming && !inFlight) {
+                confirming = false;
+                if (confirmTimer) window.clearTimeout(confirmTimer);
+                resetEmailDeleteButton(button);
+              }
+            });
+          });
         }
 
         function updateEmailSelectionState() {
@@ -2800,12 +3095,16 @@ app.post("/emails/:emailKey/delete", async (c) => {
   const env = c.env as unknown as Env;
   const emailStorage = env.EMAIL_STORAGE;
   const emailKey = c.req.param("emailKey");
+  const wantsJson = (c.req.header("Accept") || "").includes("application/json");
 
   try {
     // Get feedId from query parameters instead of form data
     const feedId = c.req.query("feedId");
 
     if (!feedId) {
+      if (wantsJson) {
+        return c.json({ ok: false, error: "Feed ID is required" }, 400);
+      }
       return c.text("Feed ID is required", 400);
     }
 
@@ -2828,10 +3127,16 @@ app.post("/emails/:emailKey/delete", async (c) => {
       await emailStorage.put(feedMetadataKey, JSON.stringify(feedMetadata));
     }
 
+    if (wantsJson) {
+      return c.json({ ok: true, emailKey, feedId });
+    }
     // Redirect back to the feed emails page
     return c.redirect(`/admin/feeds/${feedId}/emails`);
   } catch (error) {
     console.error("Error deleting email:", error);
+    if (wantsJson) {
+      return c.json({ ok: false, error: "Error deleting email. Please try again." }, 400);
+    }
     return c.text("Error deleting email. Please try again.", 400);
   }
 });
