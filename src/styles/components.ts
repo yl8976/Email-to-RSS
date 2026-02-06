@@ -127,74 +127,122 @@ export const componentStyles = `
     margin-left: auto;
   }
   
-  /* Button - VisionOS Style with consistent height */
-  .button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 44px; /* Fixed height for consistency */
-    padding: 0 var(--spacing-lg);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-md);
-    font-weight: var(--font-weight-medium);
+	  /* Button - VisionOS Style with consistent height */
+	  .button {
+	    display: inline-flex;
+	    align-items: center;
+	    justify-content: center;
+	    position: relative;
+	    overflow: hidden;
+	    height: 44px; /* Fixed height for consistency */
+	    padding: 0 var(--spacing-lg);
+	    border-radius: var(--radius-md);
+	    font-size: var(--font-size-md);
+	    font-weight: var(--font-weight-medium);
     text-decoration: none;
     cursor: pointer;
     transition: all var(--transition-fast), color 0.3s ease, background-color 0.3s ease;
-    white-space: nowrap;
-    opacity: 1;
-    
-    /* Glass effect for buttons */
-    background-color: rgba(10, 132, 255, 0.8);
-    backdrop-filter: blur(var(--blur-sm));
-    -webkit-backdrop-filter: blur(var(--blur-sm));
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-    color: var(--color-text-on-primary);
-  }
+	    white-space: nowrap;
+	    opacity: 1;
+	    
+	    /* Liquid-glass depth: layered gradients + inner highlights */
+	    background-color: rgba(10, 132, 255, 0.78);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.38), transparent 48%),
+	      linear-gradient(180deg, rgba(10, 132, 255, 0.98) 0%, rgba(10, 132, 255, 0.68) 100%);
+	    backdrop-filter: blur(var(--blur-sm));
+	    -webkit-backdrop-filter: blur(var(--blur-sm));
+	    border: 1px solid rgba(255, 255, 255, 0.16);
+	    box-shadow:
+	      0 14px 34px rgba(0, 0, 0, 0.22),
+	      0 2px 6px rgba(0, 0, 0, 0.14),
+	      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+	      inset 0 -1px 0 rgba(0, 0, 0, 0.26);
+	    color: var(--color-text-on-primary);
+	  }
+
+	  .button::after {
+	    content: "";
+	    position: absolute;
+	    inset: 0;
+	    border-radius: inherit;
+	    pointer-events: none;
+	    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+	    opacity: 0.9;
+	  }
+	  
+	  .button:hover, .button:focus {
+	    background-color: rgba(10, 132, 255, 0.86);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.45), transparent 50%),
+	      linear-gradient(180deg, rgba(10, 132, 255, 1) 0%, rgba(10, 132, 255, 0.74) 100%);
+	    box-shadow:
+	      0 18px 46px rgba(0, 0, 0, 0.26),
+	      0 6px 14px rgba(0, 0, 0, 0.16),
+	      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+	      inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+	    transform: translateY(-1px);
+	  }
+	  
+	  .button:active {
+	    transform: translateY(0);
+	    box-shadow:
+	      0 10px 26px rgba(0, 0, 0, 0.22),
+	      0 2px 6px rgba(0, 0, 0, 0.12),
+	      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+	      inset 0 -1px 0 rgba(0, 0, 0, 0.30);
+	  }
+	  
+	  .button-secondary {
+	    background-color: rgba(60, 60, 67, 0.12);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.26), transparent 52%),
+	      linear-gradient(180deg, rgba(60, 60, 67, 0.22) 0%, rgba(60, 60, 67, 0.08) 100%);
+	    color: var(--color-text-primary);
+	    border: 1px solid rgba(255, 255, 255, 0.12);
+	  }
+	  
+	  .button-secondary:hover, .button-secondary:focus {
+	    background-color: rgba(60, 60, 67, 0.18);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.30), transparent 52%),
+	      linear-gradient(180deg, rgba(60, 60, 67, 0.28) 0%, rgba(60, 60, 67, 0.10) 100%);
+	  }
+	  
+	  /* Light mode specific button styling */
+	  @media (prefers-color-scheme: light) {
+	    .button-secondary {
+	      background-color: rgba(60, 60, 67, 0.06);
+	      background-image:
+	        radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.55), transparent 55%),
+	        linear-gradient(180deg, rgba(60, 60, 67, 0.10) 0%, rgba(60, 60, 67, 0.04) 100%);
+	      border: 1px solid rgba(60, 60, 67, 0.14);
+	    }
+	    
+	    .button-secondary:hover, .button-secondary:focus {
+	      background-color: rgba(60, 60, 67, 0.08);
+	      background-image:
+	        radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.62), transparent 55%),
+	        linear-gradient(180deg, rgba(60, 60, 67, 0.12) 0%, rgba(60, 60, 67, 0.06) 100%);
+	    }
+	  }
   
-  .button:hover, .button:focus {
-    background-color: rgba(10, 132, 255, 0.9);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
-    transform: translateY(-1px);
-  }
-  
-  .button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  }
-  
-  .button-secondary {
-    background-color: rgba(60, 60, 67, 0.1);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-  }
-  
-  .button-secondary:hover, .button-secondary:focus {
-    background-color: rgba(60, 60, 67, 0.2);
-  }
-  
-  /* Light mode specific button styling */
-  @media (prefers-color-scheme: light) {
-    .button-secondary {
-      background-color: rgba(60, 60, 67, 0.05);
-      border: 1px solid rgba(60, 60, 67, 0.1);
-    }
-    
-    .button-secondary:hover, .button-secondary:focus {
-      background-color: rgba(60, 60, 67, 0.1);
-    }
-  }
-  
-  /* Logout button styling */
-  .button-logout {
-    background-color: var(--color-logout);
-    color: var(--color-text-on-primary);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  
-  .button-logout:hover, .button-logout:focus {
-    background-color: rgba(255, 159, 10, 0.9);
-  }
+	  /* Logout button styling */
+	  .button-logout {
+	    background-color: rgba(255, 159, 10, 0.78);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.34), transparent 50%),
+	      linear-gradient(180deg, rgba(255, 159, 10, 0.98) 0%, rgba(255, 159, 10, 0.66) 100%);
+	    color: var(--color-text-on-primary);
+	    border: 1px solid rgba(255, 255, 255, 0.1);
+	  }
+	  
+	  .button-logout:hover, .button-logout:focus {
+	    background-color: rgba(255, 159, 10, 0.86);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.42), transparent 52%),
+	      linear-gradient(180deg, rgba(255, 159, 10, 1) 0%, rgba(255, 159, 10, 0.72) 100%);
+	  }
   
   /* Back button styling */
   .button-back {
@@ -210,13 +258,19 @@ export const componentStyles = `
     font-size: var(--font-size-lg);
   }
   
-  .button-danger {
-    background-color: rgba(255, 69, 58, 0.8);
-  }
-  
-  .button-danger:hover, .button-danger:focus {
-    background-color: rgba(255, 69, 58, 0.9);
-  }
+	  .button-danger {
+	    background-color: rgba(255, 69, 58, 0.78);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.34), transparent 50%),
+	      linear-gradient(180deg, rgba(255, 69, 58, 0.98) 0%, rgba(255, 69, 58, 0.66) 100%);
+	  }
+	  
+	  .button-danger:hover, .button-danger:focus {
+	    background-color: rgba(255, 69, 58, 0.86);
+	    background-image:
+	      radial-gradient(140% 120% at 18% 0%, rgba(255, 255, 255, 0.42), transparent 52%),
+	      linear-gradient(180deg, rgba(255, 69, 58, 1) 0%, rgba(255, 69, 58, 0.72) 100%);
+	  }
   
   /* Small button variation */
   .button-small {
