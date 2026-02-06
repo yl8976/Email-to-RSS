@@ -5,10 +5,12 @@ import { modalScripts, emailViewScripts, initScripts } from "./interactions";
 import { clipboardScripts } from "./clipboard";
 import { authHelpers } from "./auth";
 import { toastScripts } from "./toast";
+import { httpErrorScripts } from "./httpErrors";
 
 // Combine all scripts into a single JavaScript string
 export const interactiveScripts = `
   ${toastScripts}
+  ${httpErrorScripts}
   ${modalScripts}
   ${emailViewScripts}
   ${clipboardScripts}
@@ -23,4 +25,5 @@ export {
   clipboardScripts,
   authHelpers,
   toastScripts,
+  httpErrorScripts,
 };

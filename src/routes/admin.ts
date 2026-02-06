@@ -1349,10 +1349,15 @@ app.get("/", async (c) => {
 	                body: JSON.stringify({ feedIds: batch }),
 	              });
 	
-	              const data = await res.json().catch(() => ({}));
-	              if (!res.ok) {
-	                const message = data && data.error ? String(data.error) : ('Request failed (' + res.status + ')');
-	                throw new Error(message);
+	              let data = {};
+	              if (window.parseJsonResponseOrThrow) {
+	                data = await window.parseJsonResponseOrThrow(res, { prefix: 'Bulk feed delete failed' });
+	              } else {
+	                data = await res.json().catch(() => ({}));
+	                if (!res.ok) {
+	                  const message = data && data.error ? String(data.error) : ('Bulk feed delete failed (HTTP ' + res.status + ')');
+	                  throw new Error(message);
+	                }
 	              }
 	
 	              const deletedIds = Array.isArray(data.deletedFeedIds) ? data.deletedFeedIds : batch;
@@ -1376,7 +1381,7 @@ app.get("/", async (c) => {
 	            if (failed.length > 0) {
 	              if (window.showToast) {
 	                window.showToast(
-	                  'Deleted ' + deletedTotal + ' feed(s). ' + failed.length + ' failed (still visible).',
+	                  'Deleted ' + deletedTotal + ' feed(s). ' + failed.length + ' failed (still visible). Try again; Cloudflare limits can cause temporary failures.',
 	                  { type: 'error', duration: 6500 },
 	                );
 	              }
@@ -1386,7 +1391,7 @@ app.get("/", async (c) => {
 	          } catch (error) {
 	            if (toast && toast.dismiss) toast.dismiss();
 	            if (window.showToast) {
-	              window.showToast('Bulk delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 7000 });
+	              window.showToast((error && error.message) ? error.message : 'Bulk feed delete failed.', { type: 'error', duration: 7500 });
 	            }
 	          } finally {
 	            FEED_BULK_DELETE_IN_PROGRESS = false;
@@ -1757,16 +1762,15 @@ app.post("/feeds/:feedId/purge", async (c) => {
 app.post("/feeds/bulk-delete", async (c) => {
   const env = c.env as unknown as Env;
   const emailStorage = env.EMAIL_STORAGE;
+  const contentType = c.req.header("Content-Type") || "";
+  const wantsJson =
+    contentType.includes("application/json") ||
+    (c.req.header("Accept") || "").includes("application/json");
 
-	  try {
-	    const contentType = c.req.header("Content-Type") || "";
-	    const wantsJson =
-	      contentType.includes("application/json") ||
-	      (c.req.header("Accept") || "").includes("application/json");
-
-	    if (wantsJson) {
-	      const body = (await c.req.json().catch(() => null)) as {
-	        feedIds?: unknown;
+  try {
+    if (wantsJson) {
+      const body = (await c.req.json().catch(() => null)) as {
+        feedIds?: unknown;
       } | null;
 
       const rawIds = Array.isArray(body?.feedIds) ? body?.feedIds : [];
@@ -1868,7 +1872,16 @@ app.post("/feeds/bulk-delete", async (c) => {
     );
   } catch (error) {
     console.error("Error bulk deleting feeds:", error);
-    return c.text("Error bulk deleting feeds. Please try again.", 400);
+    return wantsJson
+      ? c.json(
+          {
+            ok: false,
+            error:
+              "Bulk feed delete failed. This can happen if Cloudflare is rate-limiting requests or if the Worker hit a plan quota. Please try again.",
+          },
+          500,
+        )
+      : c.text("Error bulk deleting feeds. Please try again.", 500);
   }
 });
 
@@ -2674,10 +2687,15 @@ app.get("/feeds/:feedId/emails", async (c) => {
 	                body: JSON.stringify({ emailKeys: batch }),
 	              });
 
-	              const data = await res.json().catch(() => ({}));
-	              if (!res.ok) {
-	                const message = data && data.error ? String(data.error) : ('Request failed (' + res.status + ')');
-	                throw new Error(message);
+	              let data = {};
+	              if (window.parseJsonResponseOrThrow) {
+	                data = await window.parseJsonResponseOrThrow(res, { prefix: 'Bulk email delete failed' });
+	              } else {
+	                data = await res.json().catch(() => ({}));
+	                if (!res.ok) {
+	                  const message = data && data.error ? String(data.error) : ('Bulk email delete failed (HTTP ' + res.status + ')');
+	                  throw new Error(message);
+	                }
 	              }
 
 	              const deletedKeys = Array.isArray(data.deletedEmailKeys) ? data.deletedEmailKeys : batch;
@@ -2700,7 +2718,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
 	            if (failed.length > 0) {
 	              if (window.showToast) {
 	                window.showToast(
-	                  'Deleted ' + deletedTotal + ' email(s). ' + failed.length + ' failed (still visible).',
+	                  'Deleted ' + deletedTotal + ' email(s). ' + failed.length + ' failed (still visible). Try again; Cloudflare limits can cause temporary failures.',
 	                  { type: 'error', duration: 6500 },
 	                );
 	              }
@@ -2710,7 +2728,7 @@ app.get("/feeds/:feedId/emails", async (c) => {
 	          } catch (error) {
 	            if (toast && toast.dismiss) toast.dismiss();
 	            if (window.showToast) {
-	              window.showToast('Bulk delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 7000 });
+	              window.showToast((error && error.message) ? error.message : 'Bulk email delete failed.', { type: 'error', duration: 7500 });
 	            }
 	          } finally {
 	            EMAIL_BULK_DELETE_IN_PROGRESS = false;
@@ -3146,13 +3164,12 @@ app.post("/feeds/:feedId/emails/bulk-delete", async (c) => {
   const env = c.env as unknown as Env;
   const emailStorage = env.EMAIL_STORAGE;
   const feedId = c.req.param("feedId");
+  const contentType = c.req.header("Content-Type") || "";
+  const wantsJson =
+    contentType.includes("application/json") ||
+    (c.req.header("Accept") || "").includes("application/json");
 
   try {
-    const contentType = c.req.header("Content-Type") || "";
-    const wantsJson =
-      contentType.includes("application/json") ||
-      (c.req.header("Accept") || "").includes("application/json");
-
     const feedMetadataKey = `feed:${feedId}:metadata`;
     const feedMetadata = (await emailStorage.get(feedMetadataKey, {
       type: "json",
@@ -3236,7 +3253,16 @@ app.post("/feeds/:feedId/emails/bulk-delete", async (c) => {
     );
   } catch (error) {
     console.error("Error bulk deleting emails:", error);
-    return c.text("Error bulk deleting emails. Please try again.", 400);
+    return wantsJson
+      ? c.json(
+          {
+            ok: false,
+            error:
+              "Bulk email delete failed. This can happen if Cloudflare is rate-limiting requests or if the Worker hit a plan quota. Please try again.",
+          },
+          500,
+        )
+      : c.text("Error bulk deleting emails. Please try again.", 500);
   }
 });
 
