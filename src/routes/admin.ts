@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Context, Hono } from 'hono';
 import { html, raw } from 'hono/html';
 import { z } from 'zod';
 import { Env, FeedConfig, FeedList, FeedMetadata, EmailMetadata, EmailData, FeedListItem } from '../types';
@@ -6,8 +6,38 @@ import { generateFeedId } from '../utils/id-generator';
 import { designSystem } from '../styles/index';
 import { interactiveScripts, authHelpers } from '../scripts/index';
 
-// Create a Hono app for admin routes
+/**
+ * Admin routes handler for Email-to-RSS
+ * Provides a secure interface for managing RSS feeds and viewing emails
+ * 
+ * Security:
+ * - All routes except /login are protected by server-side cookie authentication
+ * - Uses HttpOnly cookies to prevent XSS attacks
+ * - Implements SameSite=Strict to prevent CSRF attacks
+ */
 const app = new Hono();
+
+// Export for testing
+export default app;
+
+// Authentication middleware for admin routes
+async function authMiddleware(c: Context, next: () => Promise<void>) {
+  const path = new URL(c.req.url).pathname;
+  // Skip auth check for login page - note that path includes /admin prefix
+  if (path === '/admin/login') {
+    return next();
+  }
+
+  const authCookie = c.req.cookie('admin_auth');
+  if (!authCookie || authCookie !== 'true') {
+    return c.redirect('/admin/login');
+  }
+
+  await next();
+}
+
+// Apply auth middleware to all admin routes
+app.use('*', authMiddleware);
 
 // Schema for feed creation
 const createFeedSchema = z.object({

@@ -96,8 +96,13 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// Webhook security middleware for /api/inbound - verify ForwardEmail.net IP
-app.use('/api/inbound', async (c, next) => {
+// Group routes by functionality
+const api = new Hono();
+const rss = new Hono();
+const admin = new Hono();
+
+// Webhook security middleware for /inbound - verify ForwardEmail.net IP
+api.use('/inbound', async (c, next) => {
   // Get the client IP
   const clientIP = c.req.header('CF-Connecting-IP') || // Cloudflare-specific header
                    c.req.header('X-Forwarded-For')?.split(',')[0].trim() ||
@@ -113,14 +118,23 @@ app.use('/api/inbound', async (c, next) => {
     return c.text('Unauthorized', 401);
   }
   
-  console.log(`Authorized webhook request from ForwardEmail.net (${clientIP})`);
+  console.log(`Authorized webhook request from ForwardEmail.net (${clientIP}`);
   await next();
 });
 
-// Route handlers
-app.post('/api/inbound', handleInbound);
-app.get('/rss/:feedId', handleRSS);
-app.route('/admin', handleAdmin);
+// API routes (inbound webhook)
+api.post('/inbound', handleInbound);
+
+// RSS feed routes (public)
+rss.get('/:feedId', handleRSS);
+
+// Admin routes (protected)
+admin.route('/', handleAdmin);
+
+// Mount the route groups
+app.route('/api', api);
+app.route('/rss', rss);
+app.route('/admin', admin);
 
 // Root path redirects to admin dashboard
 app.get('/', (c) => c.redirect('/admin'));
