@@ -32,6 +32,15 @@ export default app;
 const ADMIN_COOKIE_NAME = "admin_auth";
 const ADMIN_COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // 1 week
 
+function waitUntilSafe(c: Context, promise: Promise<unknown>) {
+  // Hono throws when ExecutionContext isn't present (ex: Node unit tests).
+  try {
+    c.executionCtx.waitUntil(promise);
+  } catch {
+    // ignore
+  }
+}
+
 function parseAllowedSenders(rawAllowedSenders: string): string[] {
   return rawAllowedSenders
     .split(/[\n,]+/)
@@ -1482,32 +1491,48 @@ async function deleteKeysWithConcurrency(
   return { ok, failed };
 }
 
-async function deleteFeedAndEmails(
+async function deleteFeedFast(
   emailStorage: KVNamespace,
   feedId: string,
-  options: { skipListUpdate?: boolean } = {},
 ): Promise<boolean> {
   const feedConfigKey = `feed:${feedId}:config`;
   const feedMetadataKey = `feed:${feedId}:metadata`;
 
-  const [feedConfig, feedMetadata] = (await Promise.all([
-    emailStorage.get(feedConfigKey, { type: "json" }),
-    emailStorage.get(feedMetadataKey, { type: "json" }),
-  ])) as [FeedConfig | null, FeedMetadata | null];
-
-  const emailKeys = (feedMetadata?.emails || []).map((email) => email.key);
-  await deleteKeysWithConcurrency(emailStorage, emailKeys, 25);
-
-  await Promise.all([
+  const results = await Promise.allSettled([
     emailStorage.delete(feedConfigKey),
     emailStorage.delete(feedMetadataKey),
   ]);
 
-  const removedFromList = options.skipListUpdate
-    ? false
-    : await removeFeedFromList(emailStorage, feedId);
+  return results.every((r) => r.status === "fulfilled");
+}
 
-  return !!feedConfig || !!feedMetadata || removedFromList;
+async function purgeFeedKeysStep(
+  emailStorage: KVNamespace,
+  feedId: string,
+  options: { cursor?: string; limit?: number } = {},
+): Promise<{
+  deletedKeys: string[];
+  failedKeys: string[];
+  cursor: string;
+  listComplete: boolean;
+}> {
+  const prefix = `feed:${feedId}:`;
+  const limit = Math.min(
+    1000,
+    Math.max(1, Math.floor(options.limit || 250)),
+  );
+  const cursor = options.cursor || undefined;
+
+  const listed = await emailStorage.list({ prefix, cursor, limit });
+  const keys = (listed.keys || []).map((k) => k.name);
+  const { ok, failed } = await deleteKeysWithConcurrency(emailStorage, keys, 35);
+
+  return {
+    deletedKeys: ok,
+    failedKeys: failed,
+    cursor: listed.cursor || "",
+    listComplete: !!listed.list_complete,
+  };
 }
 
 // Delete feed
@@ -1518,14 +1543,51 @@ app.post("/feeds/:feedId/delete", async (c) => {
   const view = c.req.query("view") === "table" ? "table" : "list";
 
   try {
-    const deleted = await deleteFeedAndEmails(emailStorage, feedId);
-    if (!deleted) {
-      return c.text("Feed not found", 404);
-    }
+    await deleteFeedFast(emailStorage, feedId);
+    await removeFeedFromList(emailStorage, feedId);
+
+    // Best-effort cleanup in the background so the request stays fast.
+    // Use the UI purge endpoint for full, user-visible progress.
+    waitUntilSafe(c, purgeFeedKeysStep(emailStorage, feedId));
     return c.redirect(`/admin?view=${view}`);
   } catch (error) {
     console.error("Error deleting feed:", error);
     return c.text("Error deleting feed. Please try again.", 400);
+  }
+});
+
+// Purge all keys for a feed in small steps (used by the admin UI after deleting feeds).
+app.post("/feeds/:feedId/purge", async (c) => {
+  const env = c.env as unknown as Env;
+  const emailStorage = env.EMAIL_STORAGE;
+  const feedId = c.req.param("feedId");
+
+  try {
+    const body = (await c.req.json().catch(() => null)) as {
+      cursor?: unknown;
+      limit?: unknown;
+    } | null;
+
+    const cursor = body?.cursor ? String(body.cursor) : undefined;
+    const limit = Number.isFinite(Number(body?.limit))
+      ? Number(body?.limit)
+      : 250;
+
+    const step = await purgeFeedKeysStep(emailStorage, feedId, {
+      cursor,
+      limit,
+    });
+
+    return c.json({
+      ok: step.failedKeys.length === 0,
+      deletedCount: step.deletedKeys.length,
+      failedCount: step.failedKeys.length,
+      cursor: step.cursor,
+      listComplete: step.listComplete,
+    });
+  } catch (error) {
+    console.error("Error purging feed keys:", error);
+    return c.json({ ok: false, error: "Error purging feed keys" }, 500);
   }
 });
 
@@ -1567,17 +1629,15 @@ app.post("/feeds/bulk-delete", async (c) => {
       }
 
       const results: Array<{ feedId: string; ok: boolean }> = [];
-      const concurrency = 3;
+      const concurrency = 10;
 
       for (let i = 0; i < parsedFeedIds.length; i += concurrency) {
         const batch = parsedFeedIds.slice(i, i + concurrency);
         const batchResults = await Promise.all(
           batch.map(async (feedId) => {
             try {
-              await deleteFeedAndEmails(emailStorage, feedId, {
-                skipListUpdate: true,
-              });
-              return { feedId, ok: true };
+              const ok = await deleteFeedFast(emailStorage, feedId);
+              return { feedId, ok };
             } catch (error) {
               console.error("Error bulk deleting feed:", feedId, error);
               return { feedId, ok: false };
@@ -1591,6 +1651,12 @@ app.post("/feeds/bulk-delete", async (c) => {
       const failedFeedIds = results.filter((r) => !r.ok).map((r) => r.feedId);
 
       const deletedFeedIds = await removeFeedsFromListBulk(emailStorage, okIds);
+
+      // Best-effort: kick off small purge steps in the background so storage starts clearing.
+      // The UI also runs purge steps for full cleanup + progress.
+      deletedFeedIds.forEach((feedId) => {
+        waitUntilSafe(c, purgeFeedKeysStep(emailStorage, feedId));
+      });
 
       return c.json({
         ok: failedFeedIds.length === 0,
@@ -1610,17 +1676,15 @@ app.post("/feeds/bulk-delete", async (c) => {
     }
 
     const results: Array<{ feedId: string; ok: boolean }> = [];
-    const concurrency = 3;
+    const concurrency = 10;
 
     for (let i = 0; i < parsedFeedIds.length; i += concurrency) {
       const batch = parsedFeedIds.slice(i, i + concurrency);
       const batchResults = await Promise.all(
         batch.map(async (feedId) => {
           try {
-            await deleteFeedAndEmails(emailStorage, feedId, {
-              skipListUpdate: true,
-            });
-            return { feedId, ok: true };
+            const ok = await deleteFeedFast(emailStorage, feedId);
+            return { feedId, ok };
           } catch (error) {
             console.error("Error bulk deleting feed:", feedId, error);
             return { feedId, ok: false };
@@ -1632,6 +1696,10 @@ app.post("/feeds/bulk-delete", async (c) => {
 
     const okIds = results.filter((r) => r.ok).map((r) => r.feedId);
     const deletedFeedIds = await removeFeedsFromListBulk(emailStorage, okIds);
+
+    deletedFeedIds.forEach((feedId) => {
+      waitUntilSafe(c, purgeFeedKeysStep(emailStorage, feedId));
+    });
 
     return c.redirect(
       `${redirectBase}&message=bulkDeleted&count=${deletedFeedIds.length}`,
