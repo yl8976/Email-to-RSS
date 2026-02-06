@@ -352,35 +352,6 @@ app.get("/", async (c) => {
             : view === "table"
               ? html`
                   <div class="card">
-                    <div class="toolbar">
-                      <div class="toolbar-group toolbar-group-fill">
-                        <input
-                          type="search"
-                          id="feed-search"
-                          class="search"
-                          placeholder="Search title, feed id, or description"
-                          oninput="scheduleFeedFilter()"
-                        />
-                        <button
-                          type="button"
-                          class="button button-small"
-                          onclick="setVisibleFeedSelection(true)"
-                        >
-                          Select Visible
-                        </button>
-                        <button
-                          type="button"
-                          class="button button-small"
-                          onclick="setVisibleFeedSelection(false)"
-                        >
-                          Clear Visible
-                        </button>
-                        <span class="pill" id="selected-feed-count"
-                          >0 selected</span
-                        >
-                      </div>
-                    </div>
-
                     <form
                       id="bulk-feed-delete-form"
                       action="/admin/feeds/bulk-delete"
@@ -388,6 +359,46 @@ app.get("/", async (c) => {
                       onsubmit="return confirmBulkFeedDelete()"
                     >
                       <input type="hidden" name="view" value="table" />
+
+                      <div class="toolbar">
+                        <div class="toolbar-group toolbar-group-fill">
+                          <input
+                            type="search"
+                            id="feed-search"
+                            class="search"
+                            placeholder="Search title, feed id, or description"
+                            oninput="scheduleFeedFilter()"
+                          />
+                          <span class="pill" id="feed-match-count"
+                            >Showing ${feedsWithConfig.length}</span
+                          >
+                          <span class="pill" id="selected-feed-count"
+                            >0 selected</span
+                          >
+                          <button
+                            type="button"
+                            class="button button-small button-secondary"
+                            onclick="selectMatchingFeeds()"
+                          >
+                            Select Results
+                          </button>
+                          <button
+                            type="button"
+                            class="button button-small button-secondary"
+                            onclick="clearFeedSelection()"
+                          >
+                            Clear Selection
+                          </button>
+                          <button
+                            id="bulk-delete-feeds-button"
+                            type="submit"
+                            class="button button-small button-danger"
+                            disabled
+                          >
+                            Delete Selected
+                          </button>
+                        </div>
+                      </div>
 
                       <div class="table-wrap">
                         <table class="table table-feeds">
@@ -617,17 +628,6 @@ app.get("/", async (c) => {
                           </tbody>
                         </table>
                       </div>
-
-                      <div class="actions-row">
-                        <button
-                          id="bulk-delete-feeds-button"
-                          type="submit"
-                          class="button button-danger"
-                          disabled
-                        >
-                          Delete Selected Feeds
-                        </button>
-                      </div>
                     </form>
                   </div>
                 `
@@ -810,6 +810,7 @@ app.get("/", async (c) => {
         let FEED_ROWS = [];
         let FEED_CHECKBOXES = [];
         let FEED_SELECTED_COUNT_EL = null;
+        let FEED_MATCH_COUNT_EL = null;
         let FEED_BULK_DELETE_BUTTON_EL = null;
         let FEED_SELECT_ALL_EL = null;
         let FEED_FILTER_TIMER = null;
@@ -821,11 +822,21 @@ app.get("/", async (c) => {
           FEED_ROWS = Array.from(document.querySelectorAll('.feed-row'));
           FEED_CHECKBOXES = Array.from(document.querySelectorAll('.feed-select'));
           FEED_SELECTED_COUNT_EL = document.getElementById('selected-feed-count');
+          FEED_MATCH_COUNT_EL = document.getElementById('feed-match-count');
           FEED_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-feeds-button');
           FEED_SELECT_ALL_EL = document.getElementById('select-all-feeds');
           setupFeedTableResizing();
           setupFeedTableSorting();
+          updateFeedMatchCount();
           updateFeedSelectionState();
+        }
+
+        function updateFeedMatchCount() {
+          if (!FEED_MATCH_COUNT_EL) return;
+          const total = FEED_ROWS.length;
+          const visible = FEED_ROWS.filter((row) => !row.hidden).length;
+          const query = (document.getElementById('feed-search')?.value || '').trim();
+          FEED_MATCH_COUNT_EL.textContent = query ? ('Showing ' + visible + ' of ' + total) : ('Showing ' + total);
         }
 
         function scheduleFeedFilter() {
@@ -1052,12 +1063,24 @@ app.get("/", async (c) => {
           updateFeedSelectionState();
         }
 
+        function selectMatchingFeeds() {
+          setVisibleFeedSelection(true);
+        }
+
+        function clearFeedSelection() {
+          FEED_CHECKBOXES.forEach((checkbox) => {
+            checkbox.checked = false;
+          })
+          updateFeedSelectionState();
+        }
+
         function filterFeedRows() {
           const query = (document.getElementById('feed-search')?.value || '').toLowerCase().trim();
           FEED_ROWS.forEach((row) => {
             const haystack = row.getAttribute('data-search') || '';
             row.hidden = !!query && !haystack.includes(query);
           });
+          updateFeedMatchCount();
           updateFeedSelectionState();
         }
 
@@ -1520,38 +1543,51 @@ app.get("/feeds/:feedId/emails", async (c) => {
             : ""}
           ${feedMetadata.emails.length > 0
             ? html`
-                <div class="toolbar">
-                  <div class="toolbar-group toolbar-group-fill">
-                    <input
-                      type="search"
-                      id="email-search"
-                      class="search"
-                      placeholder="Search email subjects"
-                      oninput="scheduleEmailFilter()"
-                    />
-                  <button
-                    type="button"
-                    class="button button-small"
-                    onclick="setVisibleEmailSelection(true)"
-                  >
-                    Select Visible
-                  </button>
-                  <button
-                    type="button"
-                    class="button button-small"
-                    onclick="setVisibleEmailSelection(false)"
-                  >
-                    Clear Visible
-                  </button>
-                    <span class="pill" id="selected-email-count">0 selected</span>
-                  </div>
-                </div>
-
                 <form
                   action="/admin/feeds/${feedId}/emails/bulk-delete"
                   method="post"
                   onsubmit="return confirmBulkEmailDelete()"
                 >
+                  <div class="toolbar">
+                    <div class="toolbar-group toolbar-group-fill">
+                      <input
+                        type="search"
+                        id="email-search"
+                        class="search"
+                        placeholder="Search email subjects"
+                        oninput="scheduleEmailFilter()"
+                      />
+                      <span class="pill" id="email-match-count"
+                        >Showing ${feedMetadata.emails.length}</span
+                      >
+                      <span class="pill" id="selected-email-count"
+                        >0 selected</span
+                      >
+                      <button
+                        type="button"
+                        class="button button-small button-secondary"
+                        onclick="selectMatchingEmails()"
+                      >
+                        Select Results
+                      </button>
+                      <button
+                        type="button"
+                        class="button button-small button-secondary"
+                        onclick="clearEmailSelection()"
+                      >
+                        Clear Selection
+                      </button>
+                      <button
+                        id="bulk-delete-emails-button"
+                        type="submit"
+                        class="button button-small button-danger"
+                        disabled
+                      >
+                        Delete Selected
+                      </button>
+                    </div>
+                  </div>
+
                   <div class="table-wrap">
                     <table class="table table-emails">
                       <colgroup>
@@ -1641,16 +1677,6 @@ app.get("/feeds/:feedId/emails", async (c) => {
                       </tbody>
                     </table>
                   </div>
-                  <div class="actions-row">
-                    <button
-                      id="bulk-delete-emails-button"
-                      type="submit"
-                      class="button button-danger"
-                      disabled
-                    >
-                      Delete Selected Emails
-                    </button>
-                  </div>
                 </form>
               `
             : html`<div class="card">
@@ -1663,32 +1689,43 @@ app.get("/feeds/:feedId/emails", async (c) => {
 
         <script>
           ${raw(`
-        let EMAIL_ROWS = [];
-        let EMAIL_CHECKBOXES = [];
-        let EMAIL_SELECTED_COUNT_EL = null;
-        let EMAIL_BULK_DELETE_BUTTON_EL = null;
-        let EMAIL_SELECT_ALL_EL = null;
-        let EMAIL_FILTER_TIMER = null;
-        let EMAIL_SORT_KEY = 'receivedAt';
-        let EMAIL_SORT_DIR = 'desc';
+	        let EMAIL_ROWS = [];
+	        let EMAIL_CHECKBOXES = [];
+	        let EMAIL_SELECTED_COUNT_EL = null;
+	        let EMAIL_MATCH_COUNT_EL = null;
+	        let EMAIL_BULK_DELETE_BUTTON_EL = null;
+	        let EMAIL_SELECT_ALL_EL = null;
+	        let EMAIL_FILTER_TIMER = null;
+	        let EMAIL_SORT_KEY = 'receivedAt';
+	        let EMAIL_SORT_DIR = 'desc';
         const EMAIL_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-        function initEmailUI() {
-          EMAIL_ROWS = Array.from(document.querySelectorAll('.email-row'));
-          EMAIL_CHECKBOXES = Array.from(document.querySelectorAll('.email-select'));
-          EMAIL_SELECTED_COUNT_EL = document.getElementById('selected-email-count');
-          EMAIL_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-emails-button');
-          EMAIL_SELECT_ALL_EL = document.getElementById('select-all-emails');
-          setupEmailTableResizing();
-          setupEmailTableSorting();
-          updateEmailSelectionState();
-        }
+	        function initEmailUI() {
+	          EMAIL_ROWS = Array.from(document.querySelectorAll('.email-row'));
+	          EMAIL_CHECKBOXES = Array.from(document.querySelectorAll('.email-select'));
+	          EMAIL_SELECTED_COUNT_EL = document.getElementById('selected-email-count');
+	          EMAIL_MATCH_COUNT_EL = document.getElementById('email-match-count');
+	          EMAIL_BULK_DELETE_BUTTON_EL = document.getElementById('bulk-delete-emails-button');
+	          EMAIL_SELECT_ALL_EL = document.getElementById('select-all-emails');
+	          setupEmailTableResizing();
+	          setupEmailTableSorting();
+	          updateEmailMatchCount();
+	          updateEmailSelectionState();
+	        }
 
-        function scheduleEmailFilter() {
-          if (EMAIL_FILTER_TIMER) {
-            clearTimeout(EMAIL_FILTER_TIMER);
-          }
-          EMAIL_FILTER_TIMER = setTimeout(filterEmailRows, 120);
+	        function updateEmailMatchCount() {
+	          if (!EMAIL_MATCH_COUNT_EL) return;
+	          const total = EMAIL_ROWS.length;
+	          const visible = EMAIL_ROWS.filter((row) => !row.hidden).length;
+	          const query = (document.getElementById('email-search')?.value || '').trim();
+	          EMAIL_MATCH_COUNT_EL.textContent = query ? ('Showing ' + visible + ' of ' + total) : ('Showing ' + total);
+	        }
+
+	        function scheduleEmailFilter() {
+	          if (EMAIL_FILTER_TIMER) {
+	            clearTimeout(EMAIL_FILTER_TIMER);
+	          }
+	          EMAIL_FILTER_TIMER = setTimeout(filterEmailRows, 120);
         }
 
         function getEmailSortValue(row, key) {
@@ -1894,23 +1931,35 @@ app.get("/feeds/:feedId/emails", async (c) => {
           updateEmailSelectionState();
         }
 
-        function setVisibleEmailSelection(checked) {
-          EMAIL_CHECKBOXES.forEach((checkbox) => {
-            if (!checkbox.closest('tr')?.hidden) {
-              checkbox.checked = checked;
-            }
-          })
-          updateEmailSelectionState();
-        }
+	        function setVisibleEmailSelection(checked) {
+	          EMAIL_CHECKBOXES.forEach((checkbox) => {
+	            if (!checkbox.closest('tr')?.hidden) {
+	              checkbox.checked = checked;
+	            }
+	          })
+	          updateEmailSelectionState();
+	        }
 
-        function filterEmailRows() {
-          const query = (document.getElementById('email-search')?.value || '').toLowerCase().trim();
-          EMAIL_ROWS.forEach((row) => {
-            const haystack = row.getAttribute('data-search') || '';
-            row.hidden = !!query && !haystack.includes(query);
-          });
-          updateEmailSelectionState();
-        }
+	        function selectMatchingEmails() {
+	          setVisibleEmailSelection(true);
+	        }
+
+	        function clearEmailSelection() {
+	          EMAIL_CHECKBOXES.forEach((checkbox) => {
+	            checkbox.checked = false;
+	          })
+	          updateEmailSelectionState();
+	        }
+
+	        function filterEmailRows() {
+	          const query = (document.getElementById('email-search')?.value || '').toLowerCase().trim();
+	          EMAIL_ROWS.forEach((row) => {
+	            const haystack = row.getAttribute('data-search') || '';
+	            row.hidden = !!query && !haystack.includes(query);
+	          });
+	          updateEmailMatchCount();
+	          updateEmailSelectionState();
+	        }
 
         function confirmBulkEmailDelete() {
           const selected = EMAIL_CHECKBOXES.filter((checkbox) => checkbox.checked).length;

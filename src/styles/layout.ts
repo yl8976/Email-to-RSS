@@ -36,10 +36,10 @@ export const layoutStyles = `
     box-sizing: border-box;
   }
 
-  /* Wider layout for data-dense pages (tables) */
-  .container-wide {
-    max-width: 1280px;
-  }
+	  /* Wider layout for data-dense pages (tables) */
+	  .container-wide {
+	    max-width: 1440px;
+	  }
   
   /* Header Styles */
   .header {

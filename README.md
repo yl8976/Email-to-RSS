@@ -114,8 +114,8 @@ npm run build
 3. Use the search box to filter obvious spam feeds.
    - Long titles/URLs are truncated; hover to see the full value. Click to copy.
    - Drag the column separators to resize; click headers to sort (double-click a separator to reset width).
-4. Select rows and use **Delete Selected Feeds**.
-5. For legitimate feeds that got spam emails, open **Emails**, filter by subject, then **Delete Selected Emails**.
+4. Use **Select Results** to select the filtered rows, then click **Delete Selected**.
+5. For legitimate feeds that got spam emails, open **Emails**, filter by subject, then **Select Results** and **Delete Selected**.
 
 ## Upgrading dependencies
 

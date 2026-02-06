@@ -240,6 +240,7 @@ export const componentStyles = `
   
   input[type="text"],
   input[type="email"],
+  input[type="search"],
   input[type="password"],
   textarea {
     display: block;
@@ -255,6 +256,18 @@ export const componentStyles = `
     font-family: var(--font-family);
     backdrop-filter: blur(var(--blur-sm));
     -webkit-backdrop-filter: blur(var(--blur-sm));
+  }
+
+  input[type="search"] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type="search"]::-webkit-search-decoration,
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-results-button,
+  input[type="search"]::-webkit-search-results-decoration {
+    -webkit-appearance: none;
   }
   
   input:focus,
@@ -507,6 +520,26 @@ export const componentStyles = `
   input.search {
     min-width: 280px;
     flex: 1;
+    height: 40px;
+    border-radius: var(--radius-pill);
+    padding: 0 14px;
+    padding-left: 38px;
+    background-color: rgba(60, 60, 67, 0.14);
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%238e8e93'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Ccircle%20cx='11'%20cy='11'%20r='7'/%3E%3Cpath%20d='M21%2021l-4.3-4.3'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: 14px center;
+    background-size: 16px 16px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  @media (prefers-color-scheme: light) {
+    input.search {
+      background-color: rgba(60, 60, 67, 0.08);
+    }
+  }
+
+  input.search::placeholder {
+    color: var(--color-text-tertiary);
   }
 
   .actions-row {

@@ -80,6 +80,7 @@ Notes:
 - First choice: use dashboard bulk actions (`/admin`) with search + checkbox selection.
 - Use **Table** view for bulk delete.
 - Table columns are resizable and sortable; widths persist per-browser via localStorage.
+- **Select Results** selects all rows currently shown by the search filter; **Clear Selection** unselects everything.
 - Avoid wildcard deletion; prefer search + small batches to reduce risk of deleting legitimate feeds.
 
 ## Cloudflare/Wrangler conventions
