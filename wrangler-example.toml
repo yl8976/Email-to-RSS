@@ -8,6 +8,11 @@ kv_namespaces = [
   { binding = "EMAIL_STORAGE", id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID", preview_id = "REPLACE_WITH_YOUR_PREVIEW_KV_NAMESPACE_ID" }
 ]
 
+# Workers Observability (keeps config in sync with dashboard toggle)
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 # Global Environment variables
 [vars]
 DOMAIN = "REPLACE_WITH_YOUR_DOMAIN" # Your custom domain for emails
