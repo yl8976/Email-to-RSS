@@ -968,6 +968,7 @@ export const componentStyles = `
     word-break: break-word;
     flex: 1;
     min-width: 0;
+    user-select: text;
   }
 
   .toast-close {

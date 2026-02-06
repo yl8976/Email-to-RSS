@@ -48,14 +48,29 @@ export const toastScripts = `
       toast.appendChild(close);
 
       return { toast, text, close, spinner, body };
-    }
+	    }
+	
+	    function showToast(message, opts) {
+	      const options = opts || {};
+	      const type = (options && typeof options.type === 'string') ? String(options.type) : 'info';
+	      const loading = !!(options && options.loading);
 
-    function showToast(message, opts) {
-      const options = opts || {};
-      const duration = Number.isFinite(options.duration) ? Number(options.duration) : 4500;
+	      // Default durations:
+	      // - error: persistent (user must dismiss) so messages can be copied and acted on
+	      // - info/success/warning: auto-dismiss (notifications)
+	      const defaultDurationByType = {
+	        info: 4500,
+	        success: 3500,
+	        warning: 6500,
+	        error: 0,
+	      };
 
-      const stack = ensureToastStack();
-      const { toast, text, close, body } = createToastEl(message, options);
+	      const duration = Number.isFinite(options.duration)
+	        ? Number(options.duration)
+	        : (loading ? 0 : (defaultDurationByType[type] ?? 4500));
+	
+	      const stack = ensureToastStack();
+	      const { toast, text, close, body } = createToastEl(message, options);
 
       let dismissed = false;
       let timeoutId = 0;
@@ -102,15 +117,11 @@ export const toastScripts = `
         }
       }
 
-      close.addEventListener('click', dismiss);
-      toast.addEventListener('click', (e) => {
-        // Clicking the toast itself dismisses, but keep buttons functional
-        if (e.target === close) return;
-        dismiss();
-      });
-
-      stack.appendChild(toast);
-      requestAnimationFrame(() => toast.classList.add('visible'));
+	      close.addEventListener('click', dismiss);
+	      // Don't dismiss on toast-body clicks: people should be able to select/copy text.
+	
+	      stack.appendChild(toast);
+	      requestAnimationFrame(() => toast.classList.add('visible'));
 
       // duration: 0 means "persistent"
       scheduleDismiss(currentDuration);

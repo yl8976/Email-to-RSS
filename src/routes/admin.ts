@@ -1166,16 +1166,16 @@ app.get("/", async (c) => {
                 animateRowRemoval(row, () => {
                   refreshFeedRowCache();
                 });
-              } catch (error) {
-                if (toast && toast.update) {
-                  toast.update('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', loading: false, duration: 6500 });
-                } else if (window.showToast) {
-                  window.showToast('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 6500 });
-                }
-                setButtonLoading(button, false);
-                confirming = false;
-                resetDeleteButton(button);
-              } finally {
+	              } catch (error) {
+	                if (toast && toast.update) {
+	                  toast.update('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', loading: false });
+	                } else if (window.showToast) {
+	                  window.showToast('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error' });
+	                }
+	                setButtonLoading(button, false);
+	                confirming = false;
+	                resetDeleteButton(button);
+	              } finally {
                 inFlight = false;
                 if (!row) {
                   setButtonLoading(button, false);
@@ -1362,10 +1362,10 @@ app.get("/", async (c) => {
 	
 	              const deletedIds = Array.isArray(data.deletedFeedIds) ? data.deletedFeedIds : batch;
 	              const failedIds = Array.isArray(data.failedFeedIds) ? data.failedFeedIds : [];
+	              const failureDetails = Array.isArray(data.failures) ? data.failures : [];
 	
 	              removeFeedRowsById(deletedIds);
 	              deletedTotal += deletedIds.length;
-	              failed.push(...failedIds);
 	
 	              if (toast && toast.update) {
 	                const done = Math.min(i + batch.length, selectedIds.length);
@@ -1375,14 +1375,62 @@ app.get("/", async (c) => {
 	              // Keep selection state consistent as rows disappear.
 	              updateFeedMatchCount();
 	              updateFeedSelectionState();
+
+	              // If a batch fails for some feeds, retry those one-by-one using the single delete endpoint.
+	              if (failedIds.length > 0) {
+	                if (toast && toast.update) {
+	                  toast.update('Retrying ' + failedIds.length + ' failed feed(s) one-by-one...', { type: 'info' });
+	                }
+
+	                const stillFailed = [];
+	                for (let j = 0; j < failedIds.length; j++) {
+	                  const feedId = String(failedIds[j] || '');
+	                  if (!feedId) continue;
+	                  try {
+	                    const retryRes = await fetch('/admin/feeds/' + encodeURIComponent(feedId) + '/delete?view=table', {
+	                      method: 'POST',
+	                      headers: { 'Accept': 'application/json' },
+	                      credentials: 'same-origin',
+	                    });
+	                    if (window.parseJsonResponseOrThrow) {
+	                      await window.parseJsonResponseOrThrow(retryRes, { prefix: 'Retry delete failed' });
+	                    } else if (!retryRes.ok) {
+	                      throw new Error('Retry delete failed (HTTP ' + retryRes.status + ')');
+	                    }
+	                    removeFeedRowsById([feedId]);
+	                    deletedTotal += 1;
+	                  } catch (e) {
+	                    stillFailed.push(feedId);
+	                  }
+
+	                  if (toast && toast.update) {
+	                    toast.update('Retrying... (' + (j + 1) + ' of ' + failedIds.length + ')', { type: 'info' });
+	                  }
+	                }
+
+	                // Replace failed ids from this batch with only the ones that still failed after retry.
+	                if (stillFailed.length > 0) {
+	                  failed.push(...stillFailed);
+	                  if (window.showToast && failureDetails.length > 0) {
+	                    const first = failureDetails[0] && failureDetails[0].error ? String(failureDetails[0].error) : '';
+	                    if (first) {
+	                      window.showToast('Some feeds failed to delete: ' + first, { type: 'error' });
+	                    }
+	                  }
+	                }
+
+	                updateFeedMatchCount();
+	                updateFeedSelectionState();
+	              }
 	            }
 	
 	            if (toast && toast.dismiss) toast.dismiss();
-	            if (failed.length > 0) {
+	            const uniqueFailed = Array.from(new Set(failed.map((v) => String(v)).filter(Boolean)));
+	            if (uniqueFailed.length > 0) {
 	              if (window.showToast) {
 	                window.showToast(
-	                  'Deleted ' + deletedTotal + ' feed(s). ' + failed.length + ' failed (still visible). Try again; Cloudflare limits can cause temporary failures.',
-	                  { type: 'error', duration: 6500 },
+	                  'Deleted ' + deletedTotal + ' feed(s). ' + uniqueFailed.length + ' failed (still visible).',
+	                  { type: 'error' },
 	                );
 	              }
 	            } else {
@@ -1391,7 +1439,7 @@ app.get("/", async (c) => {
 	          } catch (error) {
 	            if (toast && toast.dismiss) toast.dismiss();
 	            if (window.showToast) {
-	              window.showToast((error && error.message) ? error.message : 'Bulk feed delete failed.', { type: 'error', duration: 7500 });
+	              window.showToast((error && error.message) ? error.message : 'Bulk feed delete failed.', { type: 'error' });
 	            }
 	          } finally {
 	            FEED_BULK_DELETE_IN_PROGRESS = false;
@@ -1655,15 +1703,45 @@ async function deleteFeedFast(
   emailStorage: KVNamespace,
   feedId: string,
 ): Promise<boolean> {
+  const result = await deleteFeedFastDetailed(emailStorage, feedId);
+  return result.ok;
+}
+
+type DeleteFeedFastResult = {
+  // "ok" means the feed is deactivated (config deleted). Metadata is best-effort.
+  ok: boolean;
+  configDeleted: boolean;
+  metadataDeleted: boolean;
+  errors: string[];
+};
+
+async function deleteFeedFastDetailed(
+  emailStorage: KVNamespace,
+  feedId: string,
+): Promise<DeleteFeedFastResult> {
   const feedConfigKey = `feed:${feedId}:config`;
   const feedMetadataKey = `feed:${feedId}:metadata`;
 
-  const results = await Promise.allSettled([
-    emailStorage.delete(feedConfigKey),
-    emailStorage.delete(feedMetadataKey),
-  ]);
+  const errors: string[] = [];
+  let configDeleted = false;
+  let metadataDeleted = false;
 
-  return results.every((r) => r.status === "fulfilled");
+  try {
+    await emailStorage.delete(feedConfigKey);
+    configDeleted = true;
+  } catch (error) {
+    errors.push(`config delete failed: ${String(error)}`);
+  }
+
+  // Best-effort: if config is gone the feed is effectively disabled.
+  try {
+    await emailStorage.delete(feedMetadataKey);
+    metadataDeleted = true;
+  } catch (error) {
+    errors.push(`metadata delete failed: ${String(error)}`);
+  }
+
+  return { ok: configDeleted, configDeleted, metadataDeleted, errors };
 }
 
 async function purgeFeedKeysStep(
@@ -1679,7 +1757,7 @@ async function purgeFeedKeysStep(
   const prefix = `feed:${feedId}:`;
   const limit = Math.min(
     1000,
-    Math.max(1, Math.floor(options.limit || 250)),
+    Math.max(1, Math.floor(options.limit || 100)),
   );
   const cursor = options.cursor || undefined;
 
@@ -1736,9 +1814,10 @@ app.post("/feeds/:feedId/purge", async (c) => {
     } | null;
 
     const cursor = body?.cursor ? String(body.cursor) : undefined;
+    // Keep purge requests small to avoid Cloudflare per-request limits.
     const limit = Number.isFinite(Number(body?.limit))
       ? Number(body?.limit)
-      : 250;
+      : 100;
 
     const step = await purgeFeedKeysStep(emailStorage, feedId, {
       cursor,
@@ -1794,40 +1873,61 @@ app.post("/feeds/bulk-delete", async (c) => {
         );
       }
 
-      const results: Array<{ feedId: string; ok: boolean }> = [];
-      const concurrency = 10;
+      const okIds: string[] = [];
+      const failures: Array<{ feedId: string; error: string }> = [];
+      const warnings: Array<{ feedId: string; warning: string }> = [];
 
-      for (let i = 0; i < parsedFeedIds.length; i += concurrency) {
-        const batch = parsedFeedIds.slice(i, i + concurrency);
-        const batchResults = await Promise.all(
-          batch.map(async (feedId) => {
-            try {
-              const ok = await deleteFeedFast(emailStorage, feedId);
-              return { feedId, ok };
-            } catch (error) {
-              console.error("Error bulk deleting feed:", feedId, error);
-              return { feedId, ok: false };
-            }
-          }),
-        );
-        results.push(...batchResults);
+      // Keep this request intentionally small/cheap (the UI already batches calls).
+      for (const feedId of parsedFeedIds) {
+        try {
+          const result = await deleteFeedFastDetailed(emailStorage, feedId);
+          if (!result.ok) {
+            failures.push({
+              feedId,
+              error:
+                result.errors.join("; ") ||
+                "Failed to delete feed config (feed may still be active).",
+            });
+            continue;
+          }
+
+          if (!result.metadataDeleted) {
+            warnings.push({
+              feedId,
+              warning:
+                "Feed config deleted, but metadata cleanup failed. This is usually safe, but storage cleanup may be incomplete.",
+            });
+          }
+
+          okIds.push(feedId);
+        } catch (error) {
+          console.error("Error bulk deleting feed:", feedId, error);
+          failures.push({ feedId, error: String(error) });
+        }
       }
-
-      const okIds = results.filter((r) => r.ok).map((r) => r.feedId);
-      const failedFeedIds = results.filter((r) => !r.ok).map((r) => r.feedId);
 
       const deletedFeedIds = await removeFeedsFromListBulk(emailStorage, okIds);
 
-      // Best-effort: kick off small purge steps in the background so storage starts clearing.
-      // The UI also runs purge steps for full cleanup + progress.
-      deletedFeedIds.forEach((feedId) => {
-        waitUntilSafe(c, purgeFeedKeysStep(emailStorage, feedId));
+      // If config deletion succeeded but list removal didn't, surface it explicitly.
+      const removed = new Set(deletedFeedIds);
+      okIds.forEach((feedId) => {
+        if (!removed.has(feedId)) {
+          failures.push({
+            feedId,
+            error:
+              "Feed config deleted, but failed to remove it from feeds:list. Refresh and try again.",
+          });
+        }
       });
+
+      const failedFeedIds = Array.from(new Set(failures.map((f) => f.feedId)));
 
       return c.json({
         ok: failedFeedIds.length === 0,
         deletedFeedIds,
         failedFeedIds,
+        failures,
+        warnings,
       });
     }
 
@@ -1841,31 +1941,18 @@ app.post("/feeds/bulk-delete", async (c) => {
       return c.redirect(`${redirectBase}&message=bulkDeleteNoop`);
     }
 
-    const results: Array<{ feedId: string; ok: boolean }> = [];
-    const concurrency = 10;
+    const okIds: string[] = [];
 
-    for (let i = 0; i < parsedFeedIds.length; i += concurrency) {
-      const batch = parsedFeedIds.slice(i, i + concurrency);
-      const batchResults = await Promise.all(
-        batch.map(async (feedId) => {
-          try {
-            const ok = await deleteFeedFast(emailStorage, feedId);
-            return { feedId, ok };
-          } catch (error) {
-            console.error("Error bulk deleting feed:", feedId, error);
-            return { feedId, ok: false };
-          }
-        }),
-      );
-      results.push(...batchResults);
+    for (const feedId of parsedFeedIds) {
+      try {
+        const result = await deleteFeedFastDetailed(emailStorage, feedId);
+        if (result.ok) okIds.push(feedId);
+      } catch (error) {
+        console.error("Error bulk deleting feed:", feedId, error);
+      }
     }
 
-    const okIds = results.filter((r) => r.ok).map((r) => r.feedId);
     const deletedFeedIds = await removeFeedsFromListBulk(emailStorage, okIds);
-
-    deletedFeedIds.forEach((feedId) => {
-      waitUntilSafe(c, purgeFeedKeysStep(emailStorage, feedId));
-    });
 
     return c.redirect(
       `${redirectBase}&message=bulkDeleted&count=${deletedFeedIds.length}`,
@@ -2509,16 +2596,16 @@ app.get("/feeds/:feedId/emails", async (c) => {
                 animateEmailRowRemoval(row, () => {
                   refreshEmailRowCache();
                 });
-              } catch (error) {
-                if (toast && toast.update) {
-                  toast.update('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', loading: false, duration: 6500 });
-                } else if (window.showToast) {
-                  window.showToast('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', duration: 6500 });
-                }
-                setButtonLoading(button, false);
-                confirming = false;
-                resetEmailDeleteButton(button);
-              } finally {
+	              } catch (error) {
+	                if (toast && toast.update) {
+	                  toast.update('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error', loading: false });
+	                } else if (window.showToast) {
+	                  window.showToast('Delete failed: ' + (error && error.message ? error.message : 'Unknown error'), { type: 'error' });
+	                }
+	                setButtonLoading(button, false);
+	                confirming = false;
+	                resetEmailDeleteButton(button);
+	              } finally {
                 inFlight = false;
                 if (!row) {
                   setButtonLoading(button, false);
@@ -2714,23 +2801,23 @@ app.get("/feeds/:feedId/emails", async (c) => {
 	              updateEmailSelectionState();
 	            }
 
-	            if (toast && toast.dismiss) toast.dismiss();
-	            if (failed.length > 0) {
-	              if (window.showToast) {
-	                window.showToast(
-	                  'Deleted ' + deletedTotal + ' email(s). ' + failed.length + ' failed (still visible). Try again; Cloudflare limits can cause temporary failures.',
-	                  { type: 'error', duration: 6500 },
-	                );
-	              }
-	            } else {
-	              if (window.showToast) window.showToast('Deleted ' + deletedTotal + ' email(s).', { type: 'success' });
-	            }
-	          } catch (error) {
-	            if (toast && toast.dismiss) toast.dismiss();
-	            if (window.showToast) {
-	              window.showToast((error && error.message) ? error.message : 'Bulk email delete failed.', { type: 'error', duration: 7500 });
-	            }
-	          } finally {
+		            if (toast && toast.dismiss) toast.dismiss();
+		            if (failed.length > 0) {
+		              if (window.showToast) {
+		                window.showToast(
+		                  'Deleted ' + deletedTotal + ' email(s). ' + failed.length + ' failed (still visible).',
+		                  { type: 'error' },
+		                );
+		              }
+		            } else {
+		              if (window.showToast) window.showToast('Deleted ' + deletedTotal + ' email(s).', { type: 'success' });
+		            }
+		          } catch (error) {
+		            if (toast && toast.dismiss) toast.dismiss();
+		            if (window.showToast) {
+		              window.showToast((error && error.message) ? error.message : 'Bulk email delete failed.', { type: 'error' });
+		            }
+		          } finally {
 	            EMAIL_BULK_DELETE_IN_PROGRESS = false;
 	            setButtonLoading(EMAIL_BULK_DELETE_BUTTON_EL, false);
 	            updateEmailSelectionState();
