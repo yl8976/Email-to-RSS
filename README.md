@@ -106,19 +106,6 @@ npm run build
 - For high-value feeds, set `Allowed senders` so only known sender addresses/domains are accepted.
 - You should use a strong admin password and rotate periodically.
 
-## Spam cleanup runbook
-
-### UI-first cleanup
-
-1. Open `/admin`.
-2. Switch to **Table** view.
-3. Use the search box to filter obvious spam feeds.
-   - Long titles/URLs are truncated; hover to see the full value. Click to copy.
-   - Drag the column separators to resize; click headers to sort (double-click a separator to reset width).
-4. Use **Select Results** to select the filtered rows, then click **Delete Selected**.
-   - Bulk deletes run in small batches so the UI stays responsive. Keep the tab open until it finishes.
-5. For legitimate feeds that got spam emails, open **Emails**, filter by subject, then **Select Results** and **Delete Selected**.
-
 ## Upgrading dependencies
 
 To refresh dependencies to latest:
